@@ -181,9 +181,7 @@ def UI():
     rot_start_value = stored_data.get("start_position", 0)
     rot_travel_value = stored_data.get("travel", 360)
     rot_step_value = stored_data.get("step_size", 15)
-    rot_units_value = stored_data.get("units", '')
     rot_stent_value = stored_data.get("stent", '')
-    rot_cont_value = stored_data.get("controller", '')
     rot_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
     rot_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
     rot_op_value = stored_data.get("operator", '"Your Initials"')
@@ -192,124 +190,176 @@ def UI():
     rot_comm_value = stored_data.get("comments", "")
     rot_col_value = stored_data.get("col_axis", '')
     
+    # Load stored data or set defaults
+    ang_axis_value = stored_data.get("axis_name", "X")
+    ang_start_value = stored_data.get("start_position", 0)
+    ang_travel_value = stored_data.get("travel", 100)
+    ang_step_value = stored_data.get("step_size", 5)
+    ang_controller_value = stored_data.get("controller", '')
+    ang_units_value = stored_data.get("units", '')
+    ang_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
+    ang_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
+    ang_op_value = stored_data.get("operator", '"Your Initials"')
+    ang_part_value = stored_data.get("part_number", '"Part Number"')
+    ang_temp_value = stored_data.get("temp", 20)
+    ang_comm_value = stored_data.get("comments", "")
+    
+    # Initialize global variables and states
+    plot_queue = queue.Queue()
+    plot_thread = None
+    clientsocket = None
+    server_thread = None
+    ani = None
+    is_plot_running = False  # Flag to indicate if the plot is currently running
+
+    def start_plot_thread():
+        """
+        Starts a thread for handling live plot updates. Ensures that only one plot thread is running at a time.
+        """
+        global plot_thread, is_plot_running
+        if not is_plot_running:
+            is_plot_running = True
+            plot_thread = threading.Thread(target=rotary_live_plot, daemon=True)
+            plot_thread.start()
+    
     def rotary_live_plot():
-        global xforwarddata,xreversedata,yforwarddata,yreversedata
-        global fig,ax, plot_mean
-        
-        plot_font = {'family': 'serif', 'weight': 'normal', 'size': 14}
-        title_font = {'family': 'serif', 'weight': 'normal', 'size': 16}
-        
-        # Create a Figure and Axes for the plot
+        """
+        Function to handle live plotting. Sets up the plot, initializes the animation, and manages updates from a queue.
+        """
+        global ani, is_plot_running
+    
+        # Create figure and axis for the plot
         fig, ax = plt.subplots()
         ax.set_facecolor("white")
-        ax.set_xlabel("Position", fontdict=plot_font, color='darkred')
-        ax.set_ylabel("Accuracy", fontdict=plot_font, color='darkred')
-        ax.set_title("Live Plot of Position vs Accuracy", fontdict=title_font)
-        
-        canvas = FigureCanvasTkAgg(fig, master=tab1,)
-        canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13,0), sticky='nsew')
-        
-        ax.grid(False)
-        
-        '''
-        Using Queue Method
-        
-        
-        global queue
-        queue = Queue(maxsize=0)
-        
-        def update_plot(frame):
-            if not queue.empty():
-                xdata, ydata = queue.get()
+        ax.set_xlabel("Position", color='darkred')
+        ax.set_ylabel("Accuracy", color='darkred')
+        ax.set_title("Live Plot of Position vs Accuracy")
     
-                ax.cla()  # Clear the current plot
-                ax.plot(xdata, ydata)  # Plot all the data points
-                print(xdata,ydata)
-                
-        
-        global ani
-        ani = FuncAnimation(fig, update_plot, interval=100)
-        '''
+        canvas = FigureCanvasTkAgg(fig, master=tab1)
+        canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13,0), sticky='nsew')
+    
+        ax.grid(False)
+    
         def update_plot(frame):
-            global xforwarddata,xreversedata,yforwarddata,yreversedata
-
-            ax.cla()  # Clear the current plot
-
-            ax.plot(xforwarddata, yforwarddata, color='b', marker='o')
-            ax.plot(xreversedata, yreversedata, color='r', marker='x')# Plot all the data points
-            ax.relim()
-            ax.autoscale_view()
-            
-            ax.set_xlabel("Position", font=plot_font)
-            ax.set_ylabel("Accuracy", font=plot_font)
-            ax.set_title("Live Accuracy Plot", fontsize=16)
-            
-            # Set the font size for the tick labels
-            ax.tick_params(axis='both', which='major', labelsize=12)
-            
-            canvas.draw()
-            
+            """
+            Update function for the animation. Fetches data from the queue and updates the plot.
+            """
+            if not plot_queue.empty():
+                x_data, y_data = plot_queue.get()
+                ax.clear()
+                ax.plot(x_data, y_data, 'o-')  # Example plot; update with actual data logic
+                canvas.draw()
+    
+        # Initialize the animation
+        ani = FuncAnimation(fig, update_plot, interval=100)
+    
+        def on_close():
+            """
+            Cleanup function to run when closing the plot.
+            """
+            nonlocal is_plot_running
+            ani.event_source.stop()
+            plt.close(fig)
+            is_plot_running = False
+    
+        fig.canvas.mpl_connect('close_event', on_close)
+    
+    def start_server():
+        """
+        Starts a server socket to listen for incoming connections and handles data received from clients.
+        """
+        global clientsocket, server_thread
+    
         def handle_client(clientsocket):
-            global yrawforward,yrawreverse,xforwarddata,xreversedata,yforwarddata,yreversedata,plot_mean
+            """
+            Handles incoming data from the client socket and puts it into the plot queue.
+            """
             while True:
-                data = clientsocket.recv(1024)
-                if not data:
+                try:
+                    data = clientsocket.recv(1024)
+                    if not data:
+                        break
+                    # Process data and update plot queue
+                    data = data.decode('utf-8').split(',')
+                    x_data = [float(d.split(':')[1]) for d in data if "fbk" in d]
+                    y_data = [float(d.split(':')[1]) for d in data if "col" in d]
+                    plot_queue.put((x_data, y_data))
+                except socket.error as e:
+                    print(f"Socket error: {e}")
                     break
-                data = data.decode('utf-8').split(',')
-                forward_data = None
-                reverse_data = None
-                for item in data:
-                    if "forward_fbk" in item:
-                        forward_fbk = item.split(":")[1].strip()
-                        x = float(forward_fbk)
-                        xforwarddata.append(x)
-                    elif "forward_col" in item:
-                        forward_data = item.split(":")[1].strip()
-                        y = float(forward_data)
-                        yrawforward.append(y)
-                        plot_mean = np.mean(yrawforward)
-                        #yforwarddata.append(y)
-                        yforwarddata = [i - plot_mean for i in yrawforward]
-                        break
-                    if 'clear' in item:
-                        yrawforward = []
-                        yrawreverse = []
-                        xforwarddata = []
-                        xreversedata = []
-                        yforwarddata = []
-                        yreversedata = []
-                    
-                    if "reverse_fbk" in item:
-                        reverse_fbk = item.split(":")[1].strip()
-                        x = float(reverse_fbk)
-                        xreversedata.append(x)
-                    elif "reverse_col" in item:
-                        reverse_data = item.split(":")[1].strip()
-                        y = float(reverse_data)
-                        yrawreverse.append(y)
-                        #yreversedata.append(y)
-                        yreversedata = [i - plot_mean for i in yrawreverse]
-                        break
-            gc.collect()                         
+                except Exception as e:
+                    print(f"Error: {e}")
+                    break
             clientsocket.close()
-
-        def run_server():
-            global clientsocket
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((socket.gethostname(), 1234))
-            s.listen(5)
-        
+    
+        def server_loop():
+            """
+            Main server loop to accept new client connections.
+            """
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((socket.gethostname(), 1234))
+            server_socket.listen(5)
+    
             while True:
-                # now our endpoint knows about the OTHER endpoint.
-                clientsocket, address = s.accept()
-                threading.Thread(target=handle_client, args=(clientsocket,)).start()
-        
-        server_thread = threading.Thread(target=run_server, daemon=True)
+                try:
+                    client, address = server_socket.accept()
+                    client_thread = threading.Thread(target=handle_client, args=(client,))
+                    client_thread.daemon = True
+                    client_thread.start()
+                except socket.error as e:
+                    print(f"Server socket error: {e}")
+                    break
+                except Exception as e:
+                    print(f"Error in server loop: {e}")
+                    break
+            server_socket.close()
+    
+        # Start the server in a separate thread
+        server_thread = threading.Thread(target=server_loop, daemon=True)
         server_thread.start()
-        
-        global ani
-        ani = FuncAnimation(fig, update_plot, interval=100,cache_frame_data=False)        
+    
+    def stop_server():
+        """
+        Stops the server and closes any open client connections.
+        """
+        global clientsocket
+        if clientsocket:
+            clientsocket.close()
+            clientsocket = None
+    
+    def run_test():
+        """
+        Starts the test and handles live plotting and server communication.
+        """
+        # Start server to handle data communication
+        start_server()
+    
+        # Start plot thread
+        start_plot_thread()
+    
+    def cleanup():
+        """
+        Cleans up resources when the application exits or a test finishes.
+        """
+        global is_plot_running, plot_thread, ani
+    
+        # Stop the server
+        stop_server()
+    
+        # Stop the plot animation
+        if ani:
+            ani.event_source.stop()
+    
+        # Ensure the plot thread stops
+        if plot_thread and plot_thread.is_alive():
+            plot_thread.join()
+    
+        # Clean up global states
+        is_plot_running = False
+        plot_thread = None
+        ani = None
+        gc.collect()        
         
     def ask_user_input(prompt, logger):
         logger.write(prompt + "\n")
@@ -331,20 +381,20 @@ def UI():
         global clientsocket
         # Save user inputs before closing
         user_data = {
-            "axis_name": ax1.get(),
-            "start_position": start1.get(),
-            "travel": trav1.get(),
-            "step_size": step1.get(),
-            "units": unit1.get(),
-            "stent": diam1.get(),
-            "controller": cont1.get(),
-            "system_serial_number": sys1.get(),
-            "stage_serial_number": st1.get(),
-            "operator": opName1.get(),
-            "part_number": st_type1.get(),
-            "temp": tem1.get(),
-            "comments": comm1.get(),
-            "col_axis": col1.get()
+            "axis_name": rot_axis.get(),
+            "start_position": rot_start.get(),
+            "travel": rot_travel.get(),
+            "step_size": rot_step.get(),
+            "units": rot_units.get(),
+            "stent": rot_diam.get(),
+            "controller": rot_cont.get(),
+            "system_serial_number": rot_sys.get(),
+            "stage_serial_number": rot_st.get(),
+            "operator": rot_opName.get(),
+            "part_number": rot_st_type.get(),
+            "temp": rot_temp.get(),
+            "comments": rot_comm.get(),
+            "col_axis": rot_col.get()
         }
         save_user_inputs(user_data)
         try:
@@ -357,23 +407,23 @@ def UI():
             
 
     def rotarycaltest():
-        axis = str(ax1.get())
+        axis = str(rot_axis.get())
         num_readings = 5
         dwell = 1
-        step_size = float(step1.get())
-        travel = float(trav1.get())
-        temp = float(tem1.get())
-        start_pos = float(start1.get())
+        step_size = float(rot_step.get())
+        travel = float(rot_travel.get())
+        temp = float(rot_temp.get())
+        start_pos = float(rot_start.get())
         if units != 'deg':
-            dia = float(diam1.get())
+            dia = float(rot_diam.get())
         else:
-            dia = diam1.get()
-        sys_serial = str(sys1.get())
-        st_serial = str(st1.get())
-        comments = str(comm1.get())
-        stage_type = str(st_type1.get())
-        oper = str(opName1.get())
-        col_axis = str(col1.get())
+            dia = rot_diam.get()
+        sys_serial = str(rot_sys.get())
+        st_serial = str(rot_st.get())
+        comments = str(rot_comm.get())
+        stage_type = str(rot_st_type.get())
+        oper = str(rot_opName.get())
+        col_axis = str(rot_col.get())
         
         global rot_cal, controller
         
@@ -485,19 +535,22 @@ def UI():
     def import_data_rotary():
         global rot_cal
 
-        axis = ax1.get()
+        axis = str(rot_axis.get())
         num_readings = 5
         dwell = 1
-        step_size = float(step1.get())
-        travel = float(trav1.get())
-        temp = float(tem1.get())
-        start_pos = float(start1.get())
-        dia = diam1.get()
-        sys_serial = sys1.get()
-        st_serial = st1.get()
-        comments = comm1.get()
-        stage_type = st_type1.get()
-        oper = opName1.get()
+        step_size = float(rot_step.get())
+        travel = float(rot_travel.get())
+        temp = float(rot_temp.get())
+        start_pos = float(rot_start.get())
+        if units != 'deg':
+            dia = float(rot_diam.get())
+        else:
+            dia = rot_diam.get()
+        sys_serial = str(rot_sys.get())
+        st_serial = str(rot_st.get())
+        comments = str(rot_comm.get())
+        stage_type = str(rot_st_type.get())
+        oper = str(rot_opName.get())
 
         rot_cal = rotary_cal(
             axis,
@@ -524,23 +577,23 @@ def UI():
 
     def test_type_def():
         global test_type
-        if direction1.get() == "uni":
+        if rot_direction.get() == "uni":
             test_type = 'Unidirectional'
-        elif direction1.get() == "bi":
+        elif rot_direction.get() == "bi":
             test_type = 'Bidirectional'
         else:
             test_type = 'None'
 
     def unit_def():
         global units
-        if unit1.get() == 'deg':
-            diam1.set('None')
+        if rot_units.get() == 'deg':
+            rot_diam.set('None')
             units = 'deg'
             ent_stent["state"] = tk.DISABLED
-        elif unit1.get() == 'mm':
+        elif rot_units.get() == 'mm':
             units = 'mm'
             ent_stent["state"] = tk.NORMAL
-        elif unit1.get() == 'in':
+        elif rot_units.get() == 'in':
             units = 'in'
             ent_stent["state"] = tk.NORMAL
         else:
@@ -550,17 +603,17 @@ def UI():
     def drive_def():
         global drive
         global is_cal
-        if cont1.get() == 'a1':
+        if rot_cont.get() == 'a1':
             cbx_cal["state"] = tk.DISABLED
             ent_col['state'] = tk.DISABLED
-            cal1.set(0)
+            rot_cal.set(0)
             is_cal = 0
             drive = 'Automation1'
-        elif cont1.get() == 'other':
+        elif rot_cont.get() == 'other':
             cbx_cal["state"] = tk.NORMAL
             ent_col['state'] = tk.NORMAL
             drive = 'Other'
-            if cal1.get() == 1:
+            if rot_cal.get() == 1:
                 is_cal = 1
             else:
                 is_cal = 0
@@ -569,7 +622,7 @@ def UI():
 
     def cal_def():
         global is_cal
-        if cal1.get() == 1:
+        if rot_cal.get() == 1:
             is_cal = 1
         else:
             is_cal = 0
@@ -577,8 +630,8 @@ def UI():
     def open_rotary_Plot():
         sys.stdout = TextLogger(txt_outStr)
 
-        axis = ax1.get()
-        sys_serial = sys1.get()
+        axis = rot_axis.get()
+        sys_serial = rot_sys.get()
 
         start_path = ('O:/')
         folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(start_path) for dir_name in dirs if str(sys_serial[0:6]) in dir_name), None)
@@ -601,351 +654,159 @@ def UI():
         else:
             print(f"File '{pdf_file_path}' does not exist.")
     
-    # Load stored data or set defaults
-    rot_axis_value = stored_data.get("axis_name", "X")
-    rot_start_value = stored_data.get("start_position", 0)
-    rot_travel_value = stored_data.get("travel", 360)
-    rot_step_value = stored_data.get("step_size", 15)
-    rot_units_value = stored_data.get("units", '')
-    rot_stent_value = stored_data.get("stent", '')
-    rot_cont_value = stored_data.get("controller", '')
-    rot_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
-    rot_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
-    rot_op_value = stored_data.get("operator", '"Your Initials"')
-    rot_part_value = stored_data.get("part_number", '"Part Number"')
-    rot_temp_value = stored_data.get("temp", 20)
-    rot_comm_value = stored_data.get("comments", "")
-    rot_col_value = stored_data.get("col_axis", '')
-    
-    lbl_test = tk.Label(
-        master=tab1,
-        text="Select Test Type:",
-    )
+    # Rotary Calibration Tab UI Elements
 
+    # Test Type Selection
+    lbl_test = tk.Label(master=tab1, text="Select Test Type:")
     lbl_test.grid(row=test_row, column=0, padx=5, pady=5)
-
-    direction1 = tk.StringVar(value=0)
-
-    uni_dir = tk.Radiobutton(
-        master=tab1,
-        text="Unidirectional",
-        variable=direction1,
-        value="uni",
-        command=test_type_def
-    )
+    
+    rot_direction = tk.StringVar(value=0)
+    uni_dir = tk.Radiobutton(master=tab1, text="Unidirectional", variable=rot_direction, value="uni", command=test_type_def)
     uni_dir.grid(row=test_row, column=1, padx=5, pady=5)
-
-    bi_dir = tk.Radiobutton(
-        master=tab1,
-        text="Bidirectional",
-        variable=direction1,
-        value="bi",
-        command=test_type_def
-    )
+    
+    bi_dir = tk.Radiobutton(master=tab1, text="Bidirectional", variable=rot_direction, value="bi", command=test_type_def)
     bi_dir.grid(row=test_row, column=2, padx=5, pady=5)
-
-    lbl_axis = tk.Label(
-        master=tab1,
-        text="Axis Name",
-        width=25,
-        height=1,
-    )
+    
+    # Axis Name Input
+    lbl_axis = tk.Label(master=tab1, text="Axis Name", width=25, height=1)
     lbl_axis.grid(row=axName_row, column=0, padx=5, pady=5)
-
-    ax1 = tk.StringVar(value=rot_axis_value)
-    ent_axis = tk.Entry(
-        master=tab1,
-        textvariable=ax1,
-        width=25,
-    )
+    
+    rot_axis = tk.StringVar(value=rot_axis_value)
+    ent_axis = tk.Entry(master=tab1, textvariable=rot_axis, width=25)
     ent_axis.grid(row=axName_row, column=1, padx=5, pady=5)
-
-    lbl_st = tk.Label(
-        master=tab1,
-        text="Starting Position (deg)",
-        width=25,
-        height=1,
-    )
+    
+    # Starting Position Input
+    lbl_st = tk.Label(master=tab1, text="Starting Position (deg)", width=25, height=1)
     lbl_st.grid(row=ll_row, column=0, padx=5, pady=5)
-
-    start1 = tk.DoubleVar(value=rot_start_value)
-    ent_start_pos = tk.Entry(
-        master=tab1,
-        textvariable=start1,
-        width=25,
-    )
+    
+    rot_start = tk.DoubleVar(value=rot_start_value)
+    ent_start_pos = tk.Entry(master=tab1, textvariable=rot_start, width=25)
     ent_start_pos.grid(row=ll_row, column=1, padx=5, pady=5)
-
-    lbl_travel = tk.Label(
-        master=tab1,
-        text="Total Travel (deg)",
-        width=25,
-        height=1,
-    )
+    
+    # Total Travel Input
+    lbl_travel = tk.Label(master=tab1, text="Total Travel (deg)", width=25, height=1)
     lbl_travel.grid(row=ul_row, column=0, padx=5, pady=5)
-
-    trav1 = tk.DoubleVar(value=rot_travel_value)
-    ent_travel = tk.Entry(
-        master=tab1,
-        textvariable=trav1,
-        width=25,
-    )
+    
+    rot_travel = tk.DoubleVar(value=rot_travel_value)
+    ent_travel = tk.Entry(master=tab1, textvariable=rot_travel, width=25)
     ent_travel.grid(row=ul_row, column=1, padx=5, pady=5)
-
-    lbl_step_size = tk.Label(
-        master=tab1,
-        text="Step Size (deg)",
-        width=25,
-        height=1,
-    )
+    
+    # Step Size Input
+    lbl_step_size = tk.Label(master=tab1, text="Step Size (deg)", width=25, height=1)
     lbl_step_size.grid(row=ts_row, column=0, padx=5, pady=5)
-
-    step1 = tk.DoubleVar(value=rot_step_value)
-    ent_step_size = tk.Entry(
-        master=tab1,
-        textvariable=step1,
-        width=25,
-    )
+    
+    rot_step = tk.DoubleVar(value=rot_step_value)
+    ent_step_size = tk.Entry(master=tab1, textvariable=rot_step, width=25)
     ent_step_size.grid(row=ts_row, column=1, padx=5, pady=5)
-
-    lbl_units = tk.Label(
-        master=tab1,
-        text="Units:",
-    )
+    
+    # Units Selection
+    lbl_units = tk.Label(master=tab1, text="Units:")
     lbl_units.grid(row=filt_row, column=0, padx=5, pady=5)
-
-    unit1 = tk.StringVar(value=rot_units_value)
-    cbx_deg = tk.Radiobutton(
-        master=tab1,
-        text="Degrees",
-        variable=unit1,
-        value='deg',
-        command=unit_def
-    )
+    
+    rot_units = tk.StringVar(value=0)
+    cbx_deg = tk.Radiobutton(master=tab1, text="Degrees", variable=rot_units, value='deg', command=unit_def)
     cbx_deg.grid(row=filt_row, column=1, padx=5, pady=5)
-
-    cbx_mm = tk.Radiobutton(
-        master=tab1,
-        text="Millimeters",
-        variable=unit1,
-        value='mm',
-        command=unit_def
-    )
+    
+    cbx_mm = tk.Radiobutton(master=tab1, text="Millimeters", variable=rot_units, value='mm', command=unit_def)
     cbx_mm.grid(row=filt_row, column=2, padx=5, pady=5)
-
-    cbx_in = tk.Radiobutton(
-        master=tab1,
-        text="Inches",
-        variable=unit1,
-        value='in',
-        command=unit_def
-    )
+    
+    cbx_in = tk.Radiobutton(master=tab1, text="Inches", variable=rot_units, value='in', command=unit_def)
     cbx_in.grid(row=filt_row, column=3, padx=5, pady=5)
-
-    lbl_stent = tk.Label(
-        master=tab1,
-        text="Stent Diameter (mm)",
-        width=25,
-        height=1,
-    )
+    
+    # Stent Diameter Input (Disabled)
+    lbl_stent = tk.Label(master=tab1, text="Stent Diameter (mm)", width=25, height=1)
     lbl_stent.grid(row=eq_row, column=0, padx=5, pady=5)
-
-    diam1 = tk.StringVar(value=rot_stent_value)
-    ent_stent = tk.Entry(
-        master=tab1,
-        textvariable=diam1,
-        width=25,
-        state=tk.DISABLED
-    )
+    
+    rot_diam = tk.StringVar(value=rot_stent_value)
+    ent_stent = tk.Entry(master=tab1, textvariable=rot_diam, width=25, state=tk.DISABLED)
     ent_stent.grid(row=eq_row, column=1, padx=5, pady=5)
-
-    lbl_drive = tk.Label(
-        master=tab1,
-        text="Controller:",
-    )
+    
+    # Controller Selection
+    lbl_drive = tk.Label(master=tab1, text="Controller:")
     lbl_drive.grid(row=eqa_row, column=0, padx=5, pady=5)
-
-    cont1 = tk.StringVar(value=rot_cont_value)
-
-    cbx_a1 = tk.Radiobutton(
-        master=tab1,
-        text="Automation1",
-        variable=cont1,
-        value='a1',
-        command=drive_def
-    )
+    
+    rot_cont = tk.StringVar(value=0)
+    cbx_a1 = tk.Radiobutton(master=tab1, text="Automation1", variable=rot_cont, value='a1', command=drive_def)
     cbx_a1.grid(row=eqa_row, column=1, padx=5, pady=5)
-
-    cbx_other = tk.Radiobutton(
-        master=tab1,
-        text="Other",
-        variable=cont1,
-        value='other',
-        command=drive_def
-    )
+    
+    cbx_other = tk.Radiobutton(master=tab1, text="Other", variable=rot_cont, value='other', command=drive_def)
     cbx_other.grid(row=eqa_row, column=2, padx=5, pady=5)
-
-    cal1 = tk.IntVar(value=0)
-    cbx_cal = tk.Checkbutton(
-        master=tab1,
-        text="Calibrated?",
-        variable=cal1,
-        onvalue=1,
-        offvalue=0,
-        state=tk.DISABLED,
-        command=cal_def
-    )
+    
+    # Calibration Checkbox (Disabled)
+    rot_cal = tk.IntVar(value=0)
+    cbx_cal = tk.Checkbutton(master=tab1, text="Calibrated?", variable=rot_cal, onvalue=1, offvalue=0, state=tk.DISABLED, command=cal_def)
     cbx_cal.grid(row=eqa_row, column=3, padx=5, pady=5)
-
-    lbl_serial = tk.Label(
-        master=tab1,
-        text="System Serial Number",
-        width=25,
-        height=1,
-    )
+    
+    # System Serial Number Input
+    lbl_serial = tk.Label(master=tab1, text="System Serial Number", width=25, height=1)
     lbl_serial.grid(row=sn_row, column=0, padx=5, pady=5)
-
-    sys1 = tk.StringVar(value=rot_sys_value)
-    ent_serial = tk.Entry(
-        master=tab1,
-        textvariable=sys1,
-        width=25,
-    )
+    
+    rot_sys = tk.StringVar(value=rot_sys_value)
+    ent_serial = tk.Entry(master=tab1, textvariable=rot_sys, width=25)
     ent_serial.grid(row=sn_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_st_serial = tk.Label(
-        master=tab1,
-        text="Stage Serial Number",
-        width=25,
-        height=1,
-    )
+    
+    # Stage Serial Number Input
+    lbl_st_serial = tk.Label(master=tab1, text="Stage Serial Number", width=25, height=1)
     lbl_st_serial.grid(row=stage_row, column=0, padx=5, pady=5)
-
-    st1 = tk.StringVar(value=rot_st_value)
-    ent_st_serial = tk.Entry(
-        master=tab1,
-        textvariable=st1,
-        width=25,
-    )
+    
+    rot_st = tk.StringVar(value=rot_st_value)
+    ent_st_serial = tk.Entry(master=tab1, textvariable=rot_st, width=25)
     ent_st_serial.grid(row=stage_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_op = tk.Label(
-        master=tab1,
-        text="Operator",
-        width=25,
-        height=1,
-    )
+    
+    # Operator Input
+    lbl_op = tk.Label(master=tab1, text="Operator", width=25, height=1)
     lbl_op.grid(row=op_row, column=0, padx=5, pady=5)
-
-    opName1 = tk.StringVar(value=rot_op_value)
-    ent_op = tk.Entry(
-        master=tab1,
-        textvariable=opName1,
-        width=25,
-    )
+    
+    rot_opName = tk.StringVar(value=rot_op_value)
+    ent_op = tk.Entry(master=tab1, textvariable=rot_opName, width=25)
     ent_op.grid(row=op_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_stage = tk.Label(
-        master=tab1,
-        text="Stage Part Number",
-        width=25,
-        height=1,
-    )
+    
+    # Stage Part Number Input
+    lbl_stage = tk.Label(master=tab1, text="Stage Part Number", width=25, height=1)
     lbl_stage.grid(row=cv_row, column=0, padx=5, pady=5)
-
-    st_type1 = tk.StringVar(value=rot_part_value)
-    ent_stage = tk.Entry(
-        master=tab1,
-        textvariable=st_type1,
-        width=25,
-    )
+    
+    rot_st_type = tk.StringVar(value=rot_part_value)
+    ent_stage = tk.Entry(master=tab1, textvariable=rot_st_type, width=25)
     ent_stage.grid(row=cv_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_temp = tk.Label(
-        master=tab1,
-        text="Temp",
-        width=25,
-        height=1,
-    )
+    
+    # Temperature Input
+    lbl_temp = tk.Label(master=tab1, text="Temp", width=25, height=1)
     lbl_temp.grid(row=ol_row, column=0, padx=5, pady=5)
-
-    tem1 = tk.DoubleVar(value=rot_temp_value)
-    ent_temp = tk.Entry(
-        master=tab1,
-        textvariable=tem1,
-        width=25,
-    )
+    
+    rot_temp = tk.DoubleVar(value=rot_temp_value)
+    ent_temp = tk.Entry(master=tab1, textvariable=rot_temp, width=25)
     ent_temp.grid(row=ol_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_comments = tk.Label(
-        master=tab1,
-        text="Comments",
-        width=25,
-        height=1,
-    )
+    
+    # Comments Input
+    lbl_comments = tk.Label(master=tab1, text="Comments", width=25, height=1)
     lbl_comments.grid(row=pm_row, column=0, padx=5, pady=5)
-
-    comm1 = tk.StringVar(value=rot_comm_value)
-    ent_comments = tk.Entry(
-        master=tab1,
-        textvariable=comm1,
-        width=25,
-    )
+    
+    rot_comm = tk.StringVar(value=rot_comm_value)
+    ent_comments = tk.Entry(master=tab1, textvariable=rot_comm, width=25)
     ent_comments.grid(row=pm_row, column=1, columnspan=3, padx=5, pady=5)
-
-    lbl_col = tk.Label(
-        master=tab1,
-        text="Collimator Axis",
-        width=25,
-        height=1,
-    )
+    
+    # Collimator Axis Input (Disabled)
+    lbl_col = tk.Label(master=tab1, text="Collimator Axis", width=25, height=1)
     lbl_col.grid(row=col_row, column=0, padx=5, pady=5)
-
-    col1 = tk.StringVar(value=rot_col_value)
-    ent_col = tk.Entry(
-        master=tab1,
-        textvariable=col1,
-        state=tk.DISABLED,
-        width=25,
-    )
+    
+    rot_col = tk.StringVar(value=rot_col_value)
+    ent_col = tk.Entry(master=tab1, textvariable=rot_col, state=tk.DISABLED, width=25)
     ent_col.grid(row=col_row, column=1, columnspan=3, padx=5, pady=5)
-
-    btn_import_rot = tk.Button(
-        master=tab1,
-        text="Import Data",
-        width=30,
-        height=1,
-        command=import_data_rotary
-    )
+    
+    # Import Data Button
+    btn_import_rot = tk.Button(master=tab1, text="Import Data", width=30, height=1, command=import_data_rotary)
     btn_import_rot.grid(row=run_row, column=1, padx=5, pady=5)
-
-    lbl_import_rot = tk.Label(
-        master=tab1,
-        text='',
-        anchor='w',
-    )
-
+    
+    lbl_import_rot = tk.Label(master=tab1, text='', anchor='w')
     lbl_import_rot.grid(row=run_row, column=1, padx=5, pady=5, columnspan=3)
-
-    btn_run_rot = tk.Button(
-        master=tab1,
-        text="Run",
-        width=25,
-        height=1,
-        command=start_rotarycaltest
-    )
-
+    
+    # Run and Open Plot Buttons
+    btn_run_rot = tk.Button(master=tab1, text="Run", width=25, height=1, command=start_rotarycaltest)
     btn_run_rot.grid(row=run_row, column=0, padx=5, pady=5)
-
-    btn_open_rot = tk.Button(
-        master=tab1,
-        text="Open Plot",
-        width=25,
-        height=1,
-        command=open_rotary_Plot
-    )
-
+    
+    btn_open_rot = tk.Button(master=tab1, text="Open Plot", width=25, height=1, command=open_rotary_Plot)
     btn_open_rot.grid(row=run_row, column=2, padx=5, pady=5)
+
 
     # Create a Frame to hold the Text widget and the Scrollbar
     frame = tk.Frame(master=tab1)
@@ -973,225 +834,109 @@ def UI():
     # Configure the grid to expand the Frame
     tab1.grid_rowconfigure(out_row, weight=1)
     tab1.grid_columnconfigure(0, weight=1)
-    
-    def rot_on_closing():
-        # Save user inputs before closing
-        user_data = {
-            "axis_name": ax1.get(),
-            "start_position": start1.get(),
-            "travel": trav1.get(),
-            "step_size": step1.get(),
-            "units": unit1.get(),
-            "stent": diam1.get(),
-            "controller": cont1.get(),
-            "system_serial_number": sys1.get(),
-            "stage_serial_number": st1.get(),
-            "operator": opName1.get(),
-            "part_number": st_type1.get(),
-            "temp": tem1.get(),
-            "comments": comm1.get(),
-            "col_axis": col1.get()
-        }
-        save_user_inputs(user_data)
-        window.destroy()
-    
-    window.protocol("WM_DELETE_WINDOW", rot_on_closing)
 
     '''
     Tab 2: Angular Testing
     
     This tab is for running pitch, yaw, and roll tests
     '''
-    # Load stored data or set defaults
-    ang_test_type_value = stored_data.get("direction", '')
-    ang_axis_value = stored_data.get("axis_name", "X")
-    ang_start_value = stored_data.get("start_position", 0)
-    ang_travel_value = stored_data.get("travel", 100)
-    ang_step_value = stored_data.get("step_size", 5)
-    ang_controller_value = stored_data.get("controller", '')
-    ang_units_value = stored_data.get("units", '')
-    ang_colx_value = stored_data.get("col_x", '')
-    ang_coly_value = stored_data.get("col_y", '')
-    ang_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
-    ang_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
-    ang_op_value = stored_data.get("operator", '"Your Initials"')
-    ang_part_value = stored_data.get("part_number", '"Part Number"')
-    ang_temp_value = stored_data.get("temp", 20)
-    ang_comm_value = stored_data.get("comments", "")
     
     def angular_live_plot():
-        
-        global xforwarddata,xreversedata,yforwarddata,yreversedata,col_axis_X,col_axis_Y
-        global fig1,ax1,fig2,ax2, plot_mean
-        
-        plot_font = {'family': 'serif', 'weight': 'normal', 'size': 12}
-        title_font = {'family': 'serif', 'weight': 'normal', 'size': 16}
-        # Create a Figure and Axes for the plot
-        fig1, ax1 = plt.subplots()
-        ax1.set_facecolor("white")
-        ax1.set_xlabel("Position", fontdict=plot_font, color='darkred')
-        ax1.set_ylabel(f"{col_axis_X}", fontdict=plot_font, color='darkred')
-        ax1.set_title("Angular Errors", fontdict=title_font)
-        
-        canvas = FigureCanvasTkAgg(fig1, master=tab2,)
-        canvas.get_tk_widget().grid(row=0, column=4, rowspan=10, columnspan=3, padx=1, pady=(17,0), sticky='nsew')
-        
-        ax1.grid(False)
-        
-        fig2, ax2 = plt.subplots()
-        ax2.set_facecolor("white")
-        ax2.set_xlabel("Position",fontdict=plot_font, color='darkred')
-        ax2.set_ylabel(f"{col_axis_Y}",fontdict=plot_font, color='darkred')
-        #ax2.set_title("Angular Errors", fontdict=plot_font)
-        
-        canvas = FigureCanvasTkAgg(fig2, master=tab2,)
-        canvas.get_tk_widget().grid(row=11, column=4, rowspan=10, columnspan=3, padx=1, pady=(7,0), sticky='nsew')
-        
-        ax2.grid(False)
-        
-        '''
-        Using Queue Method
-        
-        
-        global queue
-        queue = Queue(maxsize=0)
-        
-        def update_plot(frame):
-            if not queue.empty():
-                xdata, ydata = queue.get()
+        """
+        Initialize and update the live plot for angular testing.
+        """
+        global ani1, ani2, col_axis_X, col_axis_Y
+        fig1, ax1, canvas1 = setup_figure(tab2, 0, 4, col_axis_X, "Angular Errors", (17, 0))
+        fig2, ax2, canvas2 = setup_figure(tab2, 11, 4, col_axis_Y, "", (7, 0))
     
-                ax.cla()  # Clear the current plot
-                ax.plot(xdata, ydata)  # Plot all the data points
-                print(xdata,ydata)
-                
-        
-        global ani
-        ani = FuncAnimation(fig, update_plot, interval=100)
-        '''
-        def update_plot(frame):
-            global xforwarddata,xreversedata,yforwarddata,yreversedata
-            
-            ax1.cla()  # Clear the current plot
-            ax2.cla()
-
-            ax1.plot(xforwarddata, yforwarddata, color='b', marker='o')
-            ax1.plot(xreversedata, yreversedata, color='r', marker='x')# Plot all the data points
-            ax2.plot(xforwarddata, zforwarddata, color='b', marker='o')
-            ax2.plot(xreversedata, zreversedata, color='r', marker='x')# Plot all the data points
-            ax1.relim()
-            ax1.autoscale_view()
-            
-            ax1.set_xlabel("Position", font=plot_font)
-            ax1.set_ylabel(f"{col_axis_X}", font=plot_font)
-            ax1.set_title("Angular Errors", font=plot_font)
-            
-            ax2.set_xlabel("Position")
-            ax2.set_ylabel(f"{col_axis_Y}")
-            #ax2.set_title("Angular Errors", fontsize=16)
-            
-            # Set the font size for the tick labels
-            ax1.tick_params(axis='both', which='major', labelsize=10)
-            ax2.tick_params(axis='both', which='major', labelsize=10)
-            
-            canvas.draw()
-            
-        def handle_client(clientsocket):
-            global yrawforward,zrawforward,yrawreverse,zrawreverse,xforwarddata,xreversedata,yforwarddata,zforwarddata,zreversedata,yreversedata,plot_mean
-            while True:
-                data = clientsocket.recv(1024)
-                if not data:
-                    break
-                data = data.decode('utf-8').split(',')
-                forward_fbk = None
-                forwardx_data = None
-                forwardy_data = None
-                reversex_data = None
-                reversey_data = None
-                
-                for item in data:
-                    if "forward:" in item:
-                        forward_fbk = item.split(":")[1].strip()
-                        x = float(forward_fbk)
-                        xforwarddata.append(x)
-                    elif f"forward {col_axis_X}:" in item:
-                        forwardx_data = item.split(":")[1].strip()
-                        y = float(forwardx_data)
-                        yrawforward.append(y)
-                        plot_mean = np.mean(yrawforward)
-                        #yforwarddata.append(y)
-                        yforwarddata = [i - plot_mean for i in yrawforward]
-                    elif f"forward {col_axis_Y}:" in item:
-                        forwardy_data = item.split(":")[1].strip()
-                        z = float(forwardy_data)
-                        zrawforward.append(z)
-                        plot_mean = np.mean(zrawforward)
-                        #yforwarddata.append(y)
-                        zforwarddata = [i - plot_mean for i in zrawforward]
-                        break
-                    
-                    if "reverse" in item:
-                        reverse_fbk = item.split(":")[1].strip()
-                        x = float(reverse_fbk)
-                        xreversedata.append(x)
-                    elif f"reverse {col_axis_X}" in item:
-                        reversex_data = item.split(":")[1].strip()
-                        y = float(reversex_data)
-                        yrawreverse.append(y)
-                        plot_mean = np.mean(yrawreverse)
-                        #yforwarddata.append(y)
-                        yreversedata = [i - plot_mean for i in yrawreverse]
-                    elif f"forward {col_axis_Y}" in item:
-                        reversey_data = item.split(":")[1].strip()
-                        z = float(reversey_data)
-                        zrawreverse.append(z)
-                        plot_mean = np.mean(zrawreverse)
-                        #yforwarddata.append(y)
-                        zreversedata = [i - plot_mean for i in zrawreverse]
-                        break
-                                            
-            gc.collect()                         
-            clientsocket.close()
-        def run_server():
-            global clientsocket
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((socket.gethostname(), 1234))
-            s.listen(5)
-        
-            while True:
-                # now our endpoint knows about the OTHER endpoint.
-                clientsocket, address = s.accept()
-                threading.Thread(target=handle_client, args=(clientsocket,)).start()
-        
+        # Start server thread to handle incoming data
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
+    
+        # Create animations for the two plots
+        ani1 = FuncAnimation(fig1, lambda frame: update_angular_plot(frame, ax1, ax2, canvas1, canvas2), interval=1000, cache_frame_data=False)
+        ani2 = FuncAnimation(fig2, lambda frame: update_angular_plot(frame, ax1, ax2, canvas1, canvas2), interval=1000, cache_frame_data=False)
+    
+    def setup_figure(tab, row, column, ylabel, title, pady):
+        """
+        Set up a figure and axes for plotting.
+        """
+        plot_font = {'family': 'serif', 'weight': 'normal', 'size': 12}
+        title_font = {'family': 'serif', 'weight': 'normal', 'size': 16}
         
-        global ani1,ani2
-        ani1 = FuncAnimation(fig1, update_plot, interval=1000,cache_frame_data=False)
-        ani2 = FuncAnimation(fig2, update_plot, interval=1000,cache_frame_data=False)
-        
+        fig, ax = plt.subplots()
+        ax.set_facecolor("white")
+        ax.set_xlabel("Position", fontdict=plot_font, color='darkred')
+        ax.set_ylabel(ylabel, fontdict=plot_font, color='darkred')
+        if title:
+            ax.set_title(title, fontdict=title_font)
+        ax.grid(False)
+    
+        # Embed figure in Tkinter
+        canvas = FigureCanvasTkAgg(fig, master=tab)
+        canvas.get_tk_widget().grid(row=row, column=column, rowspan=10, columnspan=3, padx=1, pady=pady, sticky='nsew')
+    
+        return fig, ax, canvas
+    
+    def update_angular_plot(frame, ax1, ax2, canvas1, canvas2):
+        """
+        Update plots for angular data.
+        """
+        global xforwarddata, xreversedata, yforwarddata, yreversedata, zforwarddata, zreversedata
+    
+        # Clear axes for new data
+        ax1.cla()
+        ax2.cla()
+    
+        # Plot data on both axes
+        plot_data(ax1, xforwarddata, yforwarddata, xreversedata, yreversedata, "Position", col_axis_X)
+        plot_data(ax2, xforwarddata, zforwarddata, xreversedata, zreversedata, "Position", col_axis_Y)
+    
+        # Redraw canvases
+        canvas1.draw()
+        canvas2.draw()
+    
+    def plot_data(ax, xforward, yforward, xreverse, yreverse, xlabel, ylabel):
+        """
+        Plot forward and reverse data on a given axis.
+        """
+        ax.plot(xforward, yforward, color='b', marker='o')
+        ax.plot(xreverse, yreverse, color='r', marker='x')
+        ax.set_xlabel(xlabel, font={'family': 'serif', 'weight': 'normal', 'size': 12})
+        ax.set_ylabel(ylabel, font={'family': 'serif', 'weight': 'normal', 'size': 12})
+        ax.relim()
+        ax.autoscale_view()
+        ax.tick_params(axis='both', which='major', labelsize=10)
+    
+    def run_server():
+        """
+        Run a TCP server to receive data for plotting.
+        """
+        global clientsocket
+        s = socket.socket(socket.AF)
+
     def angular_test_type_def():
         global test_type
-        if direction.get() == "uni":
+        if ang_direction.get() == "uni":
             test_type = 'Unidirectional'
-        elif direction.get() == "bi":
+        elif ang_direction.get() == "bi":
             test_type = 'Bidirectional'
         else:
             test_type = 'None'
     
     def colaxis_def():
         global col_axis_X, col_axis_Y
-        if colaxisX.get() == 'pitch':
+        if ang_colaxisX.get() == 'pitch':
             col_axis_X = 'Pitch'
-        elif colaxisX.get() == 'yaw':
+        elif ang_colaxisX.get() == 'yaw':
             col_axis_X = 'Yaw'
-        elif colaxisX.get() == 'roll':
+        elif ang_colaxisX.get() == 'roll':
             col_axis_X = 'Roll'
-        if colaxisY.get() == 'pitch':
+        if ang_colaxisY.get() == 'pitch':
             col_axis_Y = 'Pitch'
-        elif colaxisY.get() == 'yaw':
+        elif ang_colaxisY.get() == 'yaw':
             col_axis_Y = 'Yaw'
-        elif colaxisY.get() == 'roll':
+        elif ang_colaxisY.get() == 'roll':
             col_axis_Y = 'Roll'
 
     def start_angulartest():
@@ -1213,22 +958,18 @@ def UI():
         global clientsocket
         # Save user inputs before closing
         user_data = {
-            "direction": direction.get(),
-            "axis_name": ax.get(),
-            "start_position": start.get(),
-            "travel": trav.get(),
-            "step_size": step.get(),
-            "controller": con.get(),
-            "units": units2.get(),
-            "col_x": colaxisX.get(),
-            "col_y": colaxisY.get(),
-            "system_serial_number": syst.get(),
-            "stage_serial_number": st.get(),
-            "operator": opName.get(),
-            "part_number": st_type1.get(),
-            "temp": tem1.get(),
-            "comments": comm1.get(),
-            "col_axis": col1.get()
+            "axis_name": ang_axis.get(),
+            "start_position": ang_start.get(),
+            "travel": ang_travel.get(),
+            "step_size": ang_step.get(),
+            "controller": ang_cont.get(),
+            "units": ang_units.get(),
+            "system_serial_number": ang_sys.get(),
+            "stage_serial_number": ang_st.get(),
+            "operator": ang_opName.get(),
+            "part_number": ang_st_type.get(),
+            "temp": ang_temp.get(),
+            "comments": ang_comm.get(),
         }
         save_user_inputs(user_data)
         try:
@@ -1239,20 +980,20 @@ def UI():
             window.after(0, btn_run_ang.config, {'state': tk.NORMAL})
 
     def angulartest():
-        axis = str(ax.get())
-        start_pos = float(start.get())
-        travel = float(trav.get())
-        step_size = float(step.get())
-        drive = str(con.get())
-        units = str(units2.get())
+        axis = str(ang_axis.get())
+        start_pos = float(ang_start.get())
+        travel = float(ang_travel.get())
+        step_size = float(ang_step.get())
+        drive = str(ang_cont.get())
+        units = str(ang_units.get())
         num_readings = 5
         dwell = 1
-        sys_serial = str(syst.get())
-        st_serial = str(st.get())
-        oper = str(opName.get())
-        stage_type = str(st_type.get())
-        temp = float(tem.get())
-        comments = str(comm.get())
+        sys_serial = str(ang_sys.get())
+        st_serial = str(ang_st.get())
+        oper = str(ang_opName.get())
+        stage_type = str(ang_st_type.get())
+        temp = float(ang_temp.get())
+        comments = str(ang_comm.get())
 
         global ang, controller
         
@@ -1363,8 +1104,8 @@ def UI():
     def open_angular_Plot():
         sys.stdout = TextLogger(txt_outStr1)
 
-        axis = ax1.get()
-        sys_serial = sys1.get()
+        axis = ang_axis.get()
+        sys_serial = ang_sys.get()
 
         start_path = ('O:/')
         folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(start_path) for dir_name in dirs if str(sys_serial[0:6]) in dir_name), None)
@@ -1390,19 +1131,20 @@ def UI():
     def import_data_angular():
         global rot_cal
 
-        axis = ax1.get()
+        axis = str(ang_axis.get())
+        start_pos = float(ang_start.get())
+        travel = float(ang_travel.get())
+        step_size = float(ang_step.get())
+        drive = str(ang_cont.get())
+        units = str(ang_units.get())
         num_readings = 5
         dwell = 1
-        step_size = float(step1.get())
-        travel = float(trav1.get())
-        temp = float(tem1.get())
-        start_pos = float(start1.get())
-        dia = diam1.get()
-        sys_serial = sys1.get()
-        st_serial = st1.get()
-        comments = comm1.get()
-        stage_type = st_type1.get()
-        oper = opName1.get()
+        sys_serial = str(ang_sys.get())
+        st_serial = str(ang_st.get())
+        oper = str(ang_opName.get())
+        stage_type = str(ang_st_type.get())
+        temp = float(ang_temp.get())
+        comments = str(ang_comm.get())
 
         rot_cal = rotary_cal(
             axis,
@@ -1411,7 +1153,6 @@ def UI():
             step_size,
             travel,
             units,
-            dia,
             test_type,
             sys_serial,
             st_serial,
@@ -1427,355 +1168,160 @@ def UI():
 
         rot_cal.import_data()
     
-    lbl_test = tk.Label(
-        master=tab2,
-        text="Select Test Type:",
-    )
+    # Angular Testing Tab UI Elements
+
+    # Test Type Selection
+    lbl_test.grid(row=test_row, column=0, padx=5, pady=5)
     
-    # Load stored data or set defaults
-    ang_test_type_value = stored_data.get("direction", '')
-    ang_axis_value = stored_data.get("axis_name", "X")
-    ang_start_value = stored_data.get("start_position", 0)
-    ang_travel_value = stored_data.get("travel", 100)
-    ang_step_value = stored_data.get("step_size", 5)
-    ang_controller_value = stored_data.get("controller", '')
-    ang_units_value = stored_data.get("units", '')
-    ang_colx_value = stored_data.get("col_x", '')
-    ang_coly_value = stored_data.get("col_y", '')
-    ang_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
-    ang_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
-    ang_op_value = stored_data.get("operator", '"Your Initials"')
-    ang_part_value = stored_data.get("part_number", '"Part Number"')
-    ang_temp_value = stored_data.get("temp", 20)
-    ang_comm_value = stored_data.get("comments", "")
+    ang_direction = tk.StringVar(value=0)
+    uni_dir = tk.Radiobutton(master=tab2, text="Unidirectional", variable=ang_direction, value="uni", command=angular_test_type_def)
+    uni_dir.grid(row=test_row, column=1, padx=5, pady=5)
     
-    lbl_test.grid(row=test_row,column=0,padx=5,pady=5)
+    bi_dir = tk.Radiobutton(master=tab2, text="Bidirectional", variable=ang_direction, value="bi", command=angular_test_type_def)
+    bi_dir.grid(row=test_row, column=2, padx=5, pady=5)
     
-    direction = tk.StringVar(value=ang_test_type_value)
+    # Axis Name Input
+    lbl_axis = tk.Label(master=tab2, text="Axis Name", width=25, height=1)
+    lbl_axis.grid(row=axName_row, column=0, padx=5, pady=5)
     
-    uni_dir = tk.Radiobutton(
-        master=tab2,
-        text="Unidirectional",
-        variable=direction,
-        value="uni",
-        command=angular_test_type_def
-    )
-    uni_dir.grid(row=test_row,column=1,padx=5,pady=5)
+    ang_axis = tk.StringVar(value=ang_axis_value)
+    ent_axis = tk.Entry(master=tab2, textvariable=ang_axis, width=25)
+    ent_axis.grid(row=axName_row, column=1, padx=5, pady=5)
     
-    bi_dir = tk.Radiobutton(
-        master=tab2,
-        text="Bidirectional",
-        variable=direction,
-        value="bi",
-        command=angular_test_type_def
-    )
-    bi_dir.grid(row=test_row,column=2,padx=5,pady=5)
+    # Starting Position Input
+    lbl_st = tk.Label(master=tab2, text="Starting Position", width=25, height=1)
+    lbl_st.grid(row=ll_row, column=0, padx=5, pady=5)
     
-    lbl_axis = tk.Label(
-        master=tab2,
-        text="Axis Name",
-        width=25,
-        height=1,
-    )
-    lbl_axis.grid(row=axName_row,column=0,padx=5,pady=5)
+    ang_start = tk.DoubleVar(value=ang_start_value)
+    ent_start_pos = tk.Entry(master=tab2, textvariable=ang_start, width=25)
+    ent_start_pos.grid(row=ll_row, column=1, padx=5, pady=5)
     
-    ax = tk.StringVar(value=ang_axis_value)
-    ent_axis = tk.Entry(
-        master=tab2,
-        textvariable=ax,
-        width=25,
-    )
-    ent_axis.grid(row=axName_row,column=1,padx=5,pady=5)
+    # Total Travel Input
+    lbl_travel = tk.Label(master=tab2, text="Total Travel", width=25, height=1)
+    lbl_travel.grid(row=ul_row, column=0, padx=5, pady=5)
     
-    lbl_st = tk.Label(
-        master=tab2,
-        text="Starting Position",
-        width=25,
-        height=1,
-    )
-    lbl_st.grid(row=ll_row,column=0,padx=5,pady=5)
+    ang_travel = tk.DoubleVar(value=ang_travel_value)
+    ent_travel = tk.Entry(master=tab2, textvariable=ang_travel, width=25)
+    ent_travel.grid(row=ul_row, column=1, padx=5, pady=5)
     
-    start = tk.DoubleVar(value=ang_start_value)
-    ent_start_pos = tk.Entry(
-        master=tab2,
-        textvariable=start,
-        width=25,
-    )
-    ent_start_pos.grid(row=ll_row,column=1,padx=5,pady=5)
+    # Step Size Input
+    lbl_step_size = tk.Label(master=tab2, text="Step Size", width=25, height=1)
+    lbl_step_size.grid(row=ts_row, column=0, padx=5, pady=5)
     
-    lbl_travel = tk.Label(
-        master=tab2,
-        text="Total Travel",
-        width=25,
-        height=1,
-    )
-    lbl_travel.grid(row=ul_row,column=0,padx=5,pady=5)
+    ang_step = tk.DoubleVar(value=ang_step_value)
+    ent_step_size = tk.Entry(master=tab2, textvariable=ang_step, width=25)
+    ent_step_size.grid(row=ts_row, column=1, padx=5, pady=5)
     
-    trav = tk.DoubleVar(value=ang_travel_value)
-    ent_travel = tk.Entry(
-        master=tab2,
-        textvariable=trav,
-        width=25,
-    )
-    ent_travel.grid(row=ul_row,column=1,padx=5,pady=5)
+    # Controller Selection Dropdown
+    lbl_drive = tk.Label(master=tab2, text="Controller:", width=25, height=1)
+    lbl_drive.grid(row=axName_row, column=2, padx=5, pady=5)
     
-    lbl_step_size = tk.Label(
-        master=tab2,
-        text="Step Size",
-        width=25,
-        height=1,
-    )
-    lbl_step_size.grid(row=ts_row,column=0,padx=5,pady=5)
-    
-    step = tk.DoubleVar(value=ang_step_value)
-    ent_step_size = tk.Entry(
-        master=tab2,
-        textvariable=step,
-        width=25,
-    )
-    ent_step_size.grid(row=ts_row,column=1,padx=5,pady=5)
-    
-    lbl_drive = tk.Label(
-        master=tab2,
-        text="Controller:",
-        width=25,
-        height=1
-    )
-    lbl_drive.grid(row=axName_row,column=2,padx=5,pady=5)
-    
-    # Options for the dropdown menu
     drive_options = ['Automation1', 'A3200', 'Other']
-    con = tk.StringVar()
-    con.set(ang_controller_value)  # Set default value
+    ang_cont = tk.StringVar(value=ang_controller_value)  # Set default value
     
-    cont = tk.OptionMenu(
-        tab2,  # The parent widget
-        con,  # The variable to hold the selected option
-        *drive_options  # The options to display    
-    )
-    cont.grid(row=ll_row,column=2,padx=5,pady=5)
+    cont = tk.OptionMenu(tab2, ang_cont, *drive_options)
+    cont.grid(row=ll_row, column=2, padx=5, pady=5)
     
-    lbl_units = tk.Label(
-        master=tab2,
-        text="Units:",
-        width=25,
-        height=1
-    )
-    lbl_units.grid(row=axName_row,column=3,padx=5,pady=5)
+    # Units Selection Dropdown
+    lbl_units = tk.Label(master=tab2, text="Units:", width=25, height=1)
+    lbl_units.grid(row=axName_row, column=3, padx=5, pady=5)
     
-    # Options for the dropdown menu
-    unit_options = ['mm', 'um', 'in','m']
-    units2 = tk.StringVar()
-    units2.set(ang_units_value)  # Set default value
+    unit_options = ['mm', 'um', 'in', 'm']
+    ang_units = tk.StringVar(value=ang_units_value)  # Set default value
     
-    un = tk.OptionMenu(
-        tab2,  # The parent widget
-        units2,  # The variable to hold the selected option
-        *unit_options  # The options to display
-    )
-    un.grid(row=ll_row,column=3,padx=5,pady=5)
+    un = tk.OptionMenu(tab2, ang_units, *unit_options)
+    un.grid(row=ll_row, column=3, padx=5, pady=5)
     
-    lbl_xdir = tk.Label(
-        master=tab2,
-        text = "Collimator X:",
-    )
-    lbl_xdir.grid(row=eq_row, column=0,padx=5,pady=5)
+    # Collimator X Selection
+    lbl_xdir = tk.Label(master=tab2, text="Collimator X:")
+    lbl_xdir.grid(row=eq_row, column=0, padx=5, pady=5)
     
-    colaxisX = tk.StringVar(value=ang_colx_value)
-    cbx_xpitch = tk.Radiobutton(
-        master=tab2,
-        text="Pitch",
-        variable=colaxisX,
-        value='pitch',
-        command=colaxis_def
-    )
-    cbx_xpitch.grid(row=eq_row,column=1,padx=5,pady=5)
+    ang_colaxisX = tk.StringVar(value=0)
+    cbx_xpitch = tk.Radiobutton(master=tab2, text="Pitch", variable=ang_colaxisX, value='pitch', command=colaxis_def)
+    cbx_xpitch.grid(row=eq_row, column=1, padx=5, pady=5)
     
-    cbx_xyaw = tk.Radiobutton(
-        master=tab2,
-        text="Yaw",
-        variable=colaxisX,
-        value='yaw',
-        command=colaxis_def
-    )
-    cbx_xyaw.grid(row=eq_row,column=2,padx=5,pady=5)
+    cbx_xyaw = tk.Radiobutton(master=tab2, text="Yaw", variable=ang_colaxisX, value='yaw', command=colaxis_def)
+    cbx_xyaw.grid(row=eq_row, column=2, padx=5, pady=5)
     
-    cbx_xroll = tk.Radiobutton(
-        master=tab2,
-        text="Roll",
-        variable=colaxisX,
-        value='roll',
-        command=colaxis_def
-    )
-    cbx_xroll.grid(row=eq_row,column=3,padx=5,pady=5)
+    cbx_xroll = tk.Radiobutton(master=tab2, text="Roll", variable=ang_colaxisX, value='roll', command=colaxis_def)
+    cbx_xroll.grid(row=eq_row, column=3, padx=5, pady=5)
     
-    lbl_ydir = tk.Label(
-        master=tab2,
-        text = "Collimator Y:",
-    )
-    lbl_ydir.grid(row=eqa_row, column=0,padx=5,pady=5)
+    # Collimator Y Selection
+    lbl_ydir = tk.Label(master=tab2, text="Collimator Y:")
+    lbl_ydir.grid(row=eqa_row, column=0, padx=5, pady=5)
     
-    colaxisY = tk.StringVar(value=ang_coly_value)
-    cbx_ypitch = tk.Radiobutton(
-        master=tab2,
-        text="Pitch",
-        variable=colaxisY,
-        value='pitch',
-        command=colaxis_def
-    )
-    cbx_ypitch.grid(row=eqa_row,column=1,padx=5,pady=5)
+    ang_colaxisY = tk.StringVar(value=0)
+    cbx_ypitch = tk.Radiobutton(master=tab2, text="Pitch", variable=ang_colaxisY, value='pitch', command=colaxis_def)
+    cbx_ypitch.grid(row=eqa_row, column=1, padx=5, pady=5)
     
-    cbx_yyaw = tk.Radiobutton(
-        master=tab2,
-        text="Yaw",
-        variable=colaxisY,
-        value='yaw',
-        command=colaxis_def
-    )
-    cbx_yyaw.grid(row=eqa_row,column=2,padx=5,pady=5)
+    cbx_yyaw = tk.Radiobutton(master=tab2, text="Yaw", variable=ang_colaxisY, value='yaw', command=colaxis_def)
+    cbx_yyaw.grid(row=eqa_row, column=2, padx=5, pady=5)
     
-    cbx_yroll = tk.Radiobutton(
-        master=tab2,
-        text="Roll",
-        variable=colaxisY,
-        value='roll',
-        command=colaxis_def
-    )
-    cbx_yroll.grid(row=eqa_row,column=3,padx=5,pady=5)
+    cbx_yroll = tk.Radiobutton(master=tab2, text="Roll", variable=ang_colaxisY, value='roll', command=colaxis_def)
+    cbx_yroll.grid(row=eqa_row, column=3, padx=5, pady=5)
     
-    lbl_serial = tk.Label(
-        master=tab2,
-        text="System Serial Number",
-        width=25,
-        height=1,
-    )
-    lbl_serial.grid(row=sn_row,column=0,padx=5,pady=5)
+    # System Serial Number Input
+    lbl_serial = tk.Label(master=tab2, text="System Serial Number", width=25, height=1)
+    lbl_serial.grid(row=sn_row, column=0, padx=5, pady=5)
     
-    syst = tk.StringVar(value=ang_sys_value)
-    ent_serial = tk.Entry(
-        master=tab2,
-        textvariable=syst,
-        width=25,
-    )
-    ent_serial.grid(row=sn_row,column=1,columnspan=3,padx=5,pady=5)
+    ang_sys = tk.StringVar(value=ang_sys_value)
+    ent_serial = tk.Entry(master=tab2, textvariable=ang_sys, width=25)
+    ent_serial.grid(row=sn_row, column=1, columnspan=3, padx=5, pady=5)
     
-    lbl_st_serial = tk.Label(
-        master=tab2,
-        text="Stage Serial Number",
-        width=25,
-        height=1,
-    )
-    lbl_st_serial.grid(row=stage_row,column=0,padx=5,pady=5)
+    # Stage Serial Number Input
+    lbl_st_serial = tk.Label(master=tab2, text="Stage Serial Number", width=25, height=1)
+    lbl_st_serial.grid(row=stage_row, column=0, padx=5, pady=5)
     
-    st= tk.StringVar(value=ang_st_value)
-    ent_st_serial = tk.Entry(
-        master=tab2,
-        textvariable=st,
-        width=25,
-    )
-    ent_st_serial.grid(row=stage_row,column=1,columnspan=3,padx=5,pady=5)
+    ang_st = tk.StringVar(value=ang_st_value)
+    ent_st_serial = tk.Entry(master=tab2, textvariable=ang_st, width=25)
+    ent_st_serial.grid(row=stage_row, column=1, columnspan=3, padx=5, pady=5)
     
-    lbl_op = tk.Label(
-        master=tab2,
-        text="Operator",
-        width=25,
-        height=1,
-    )
-    lbl_op.grid(row=op_row,column=0,padx=5,pady=5)
+    # Operator Input
+    lbl_op = tk.Label(master=tab2, text="Operator", width=25, height=1)
+    lbl_op.grid(row=op_row, column=0, padx=5, pady=5)
     
-    opName= tk.StringVar(value=ang_op_value)
-    ent_op = tk.Entry(
-        master=tab2,
-        textvariable=opName,
-        width=25,
-    )
-    ent_op.grid(row=op_row,column=1,columnspan=3,padx=5,pady=5)
+    ang_opName = tk.StringVar(value=ang_op_value)
+    ent_op = tk.Entry(master=tab2, textvariable=ang_opName, width=25)
+    ent_op.grid(row=op_row, column=1, columnspan=3, padx=5, pady=5)
     
+    # Stage Part Number Input
+    lbl_stage = tk.Label(master=tab2, text="Stage Part Number", width=25, height=1)
+    lbl_stage.grid(row=cv_row, column=0, padx=5, pady=5)
     
-    lbl_stage = tk.Label(
-        master=tab2,
-        text="Stage Part Number",
-        width=25,
-        height=1,
-    )
-    lbl_stage.grid(row=cv_row,column=0,padx=5,pady=5)
+    ang_st_type = tk.StringVar(value=ang_part_value)
+    ent_stage = tk.Entry(master=tab2, textvariable=ang_st_type, width=25)
+    ent_stage.grid(row=cv_row, column=1, columnspan=3, padx=5, pady=5)
     
-    st_type = tk.StringVar(value=ang_part_value)
-    ent_stage = tk.Entry(
-        master=tab2,
-        textvariable=st_type,
-        width=25,
-    )
-    ent_stage.grid(row=cv_row,column=1,columnspan=3,padx=5,pady=5)
+    # Temperature Input
+    lbl_temp = tk.Label(master=tab2, text="Temp", width=25, height=1)
+    lbl_temp.grid(row=ol_row, column=0, padx=5, pady=5)
     
-    lbl_temp = tk.Label(
-        master=tab2,
-        text="Temp",
-        width=25,
-        height=1,
-    )
-    lbl_temp.grid(row=ol_row,column=0,padx=5,pady=5)
+    ang_temp = tk.DoubleVar(value=ang_temp_value)
+    ent_temp = tk.Entry(master=tab2, textvariable=ang_temp, width=25)
+    ent_temp.grid(row=ol_row, column=1, columnspan=3, padx=5, pady=5)
     
-    tem = tk.DoubleVar(value=ang_temp_value)
-    ent_temp = tk.Entry(
-        master=tab2,
-        textvariable=tem,
-        width=25,
-    )
-    ent_temp.grid(row=ol_row,column=1,columnspan=3,padx=5,pady=5)
+    # Comments Input
+    lbl_comments = tk.Label(master=tab2, text="Comments", width=25, height=1)
+    lbl_comments.grid(row=pm_row, column=0, padx=5, pady=5)
     
-    lbl_comments = tk.Label(
-        master=tab2,
-        text="Comments",
-        width=25,
-        height=1,
-    )
-    lbl_comments.grid(row=pm_row,column=0,padx=5,pady=5)
+    ang_comm = tk.StringVar(value=ang_comm_value)
+    ent_comments = tk.Entry(master=tab2, textvariable=ang_comm, width=25)
+    ent_comments.grid(row=pm_row, column=1, columnspan=3, padx=5, pady=5)
     
-    comm= tk.StringVar(value=ang_comm_value)
-    ent_comments = tk.Entry(
-        master=tab2,
-        textvariable=comm,
-        width=25,
-    )
-    ent_comments.grid(row=pm_row,column=1,columnspan=3,padx=5,pady=5)
+    # Import Data Button
+    btn_import_ang = tk.Button(master=tab2, text="Import Data", width=30, height=1, command=import_data_angular)
+    btn_import_ang.grid(row=run_row, column=1, padx=5, pady=5)
     
-    btn_import_ang = tk.Button(
-        master=tab2,
-        text="Import Data",
-        width=30,
-        height = 1,
-        command=import_data_angular
-    )
-    btn_import_ang.grid(row=run_row,column=1,padx=5,pady=5)
+    lbl_import_ang = tk.Label(master=tab2, text='', anchor='w')
+    lbl_import_ang.grid(row=run_row, column=1, padx=5, pady=5, columnspan=3)
     
-    lbl_import_ang = tk.Label(
-        master=tab2,
-        text='',
-        anchor='w',
-    )
+    # Run and Open Plot Buttons
+    btn_run_ang = tk.Button(master=tab2, text="Run", width=25, height=1, command=start_angulartest)
+    btn_run_ang.grid(row=run_row, column=0, padx=5, pady=5)
     
-    lbl_import_ang.grid(row=run_row,column=1,padx=5,pady=5,columnspan=3)
-    
-    btn_run_ang = tk.Button(
-        master=tab2,
-        text="Run",
-        width=25,
-        height = 1,
-        command=start_angulartest
-    )
-    
-    btn_run_ang.grid(row=run_row,column=0,padx=5,pady=5)
-    
-    btn_open_ang = tk.Button(
-        master=tab2,
-        text="Open Plot",
-        width=25,
-        height = 1,
-        command=open_angular_Plot
-    )
-    
-    btn_open_ang.grid(row=run_row,column=2,padx=5,pady=5)
+    btn_open_ang = tk.Button(master=tab2, text="Open Plot", width=25, height=1, command=open_angular_Plot)
+    btn_open_ang.grid(row=run_row, column=2, padx=5, pady=5)
+
     
     # Create a Frame to hold the Text widget and the Scrollbar
     frame1 = tk.Frame(tab2)
@@ -1804,30 +1350,44 @@ def UI():
     tab2.grid_rowconfigure(out_row, weight=1)
     tab2.grid_columnconfigure(0, weight=1)
     
-    def ang_on_closing():
+    def on_closing():
         # Save user inputs before closing
         user_data = {
-            "direction": direction.get(),
-            "axis_name": ax.get(),
-            "start_position": start.get(),
-            "travel": trav.get(),
-            "step_size": step.get(),
-            "controller": con.get(),
-            "units": units2.get(),
-            "col_x": colaxisX.get(),
-            "col_y": colaxisY.get(),
-            "system_serial_number": syst.get(),
-            "stage_serial_number": st.get(),
-            "operator": opName.get(),
-            "part_number": st_type1.get(),
-            "temp": tem1.get(),
-            "comments": comm1.get(),
-            "col_axis": col1.get()
+            "axis_name": ang_axis.get(),
+            "start_position": ang_start.get(),
+            "travel": ang_travel.get(),
+            "step_size": ang_step.get(),
+            "controller": ang_cont.get(),
+            "units": ang_units.get(),
+            "system_serial_number": ang_sys.get(),
+            "stage_serial_number": ang_st.get(),
+            "operator": ang_opName.get(),
+            "part_number": ang_st_type.get(),
+            "temp": ang_temp.get(),
+            "comments": ang_comm.get(),
         }
+        
+        user_data = {
+            "axis_name": rot_axis.get(),
+            "start_position": rot_start.get(),
+            "travel": rot_travel.get(),
+            "step_size": rot_step.get(),
+            "units": rot_units.get(),
+            "stent": rot_diam.get(),
+            "controller": rot_cont.get(),
+            "system_serial_number": rot_sys.get(),
+            "stage_serial_number": rot_st.get(),
+            "operator": rot_opName.get(),
+            "part_number": rot_st_type.get(),
+            "temp": rot_temp.get(),
+            "comments": rot_comm.get(),
+            "col_axis": rot_col.get()
+        }
+        
         save_user_inputs(user_data)
         window.destroy()
     
-    window.protocol("WM_DELETE_WINDOW", ang_on_closing)
+    window.protocol("WM_DELETE_WINDOW", on_closing)
     
     window.mainloop()
 
