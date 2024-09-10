@@ -21,6 +21,7 @@ from Logger import TextLogger
 import socket
 import gc
 import json
+import queue
 
 yrawforward = []
 zrawforward = []
@@ -36,6 +37,25 @@ plot_mean = 0
 col_axis_X = ''
 col_axis_Y = ''
 clientsocket = None
+# Initialize global variables and states
+# Create separate queues for forward and reverse data
+forward_queue = queue.Queue()
+reverse_queue = queue.Queue()
+# Global lists to accumulate data
+xforwarddata, yforwarddata = [], []
+xreversedata, yreversedata = [], []
+yrawforward, yrawreverse = [], []
+clientsocket = None
+plot_thread = None
+server_ready_event = threading.Event()
+test_thread = None
+server_thread = None
+controller = None
+is_plot_running = False  # Ensure this is defined globally
+ani = None
+# Initialize plot line objects as None
+forward_line = None
+reverse_line = None
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -204,14 +224,49 @@ def UI():
     ang_temp_value = stored_data.get("temp", 20)
     ang_comm_value = stored_data.get("comments", "")
     
-    # Initialize global variables and states
-    plot_queue = queue.Queue()
-    plot_thread = None
-    clientsocket = None
-    server_thread = None
-    ani = None
-    is_plot_running = False  # Flag to indicate if the plot is currently running
+    def start_rotarycaltest():
+        """
+        Starts the rotary calibration test. Initializes required data and disables the run button.
+        """
+        global yrawforward, yrawreverse, xforwarddata, xreversedata, yforwarddata, yreversedata, test_thread
+        
+        # Clear data
+        yrawforward, yrawreverse = [], []
+        xforwarddata, xreversedata = [], []
+        yforwarddata, yreversedata = [], []
+    
+        # Disable the Run button during the test
+        btn_run_rot.config(state=tk.DISABLED)
+        
+        # Start the server first
+        start_server()
+        
+        # Start the plot thread
+        start_plot_thread()
+        
+        # Check server readiness without blocking the GUI
+        check_server_ready()
 
+    def check_server_ready():
+        """
+        Checks if the server is ready without blocking the GUI.
+        If the server is ready, starts the test thread.
+        """
+        if server_ready_event.is_set():
+            # Start the test thread if the server is ready
+            start_test_thread()
+        else:
+            # Re-check after 100ms
+            window.after(100, check_server_ready)
+    
+    def start_test_thread():
+        """
+        Starts the test thread for running the rotary calibration test.
+        """
+        global test_thread
+        test_thread = threading.Thread(target=run_rotarycaltest, daemon=True)
+        test_thread.start()
+    
     def start_plot_thread():
         """
         Starts a thread for handling live plot updates. Ensures that only one plot thread is running at a time.
@@ -221,12 +276,12 @@ def UI():
             is_plot_running = True
             plot_thread = threading.Thread(target=rotary_live_plot, daemon=True)
             plot_thread.start()
-    
+            
     def rotary_live_plot():
         """
         Function to handle live plotting. Sets up the plot, initializes the animation, and manages updates from a queue.
         """
-        global ani, is_plot_running
+        global ani, forward_line, reverse_line
     
         # Create figure and axis for the plot
         fig, ax = plt.subplots()
@@ -234,30 +289,45 @@ def UI():
         ax.set_xlabel("Position", color='darkred')
         ax.set_ylabel("Accuracy", color='darkred')
         ax.set_title("Live Plot of Position vs Accuracy")
+        
+        # Initialize the line objects for forward and reverse data
+        forward_line, = ax.plot([], [], 'b-o', label='Forward')
+        reverse_line, = ax.plot([], [], 'r-x', label='Reverse')
     
         canvas = FigureCanvasTkAgg(fig, master=tab1)
-        canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13,0), sticky='nsew')
-    
+        canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13, 0), sticky='nsew')
         ax.grid(False)
+    
+        # Add legend
+        ax.legend()
     
         def update_plot(frame):
             """
-            Update function for the animation. Fetches data from the queue and updates the plot.
+            Update function for the animation. Fetches data from the queues and updates the plot.
             """
-            if not plot_queue.empty():
-                x_data, y_data = plot_queue.get()
-                ax.clear()
-                ax.plot(x_data, y_data, 'o-')  # Example plot; update with actual data logic
-                canvas.draw()
+            # Get forward data from the queue
+            if not forward_queue.empty():
+                xforward, yforward = forward_queue.get()
+                forward_line.set_data(xforward, yforward)  # Update line data
+            
+            # Get reverse data from the queue
+            if not reverse_queue.empty():
+                xreverse, yreverse = reverse_queue.get()
+                reverse_line.set_data(xreverse, yreverse)  # Update line data
+            
+            # Set plot limits and redraw
+            ax.relim()
+            ax.autoscale_view()
+            canvas.draw()
     
         # Initialize the animation
         ani = FuncAnimation(fig, update_plot, interval=100)
     
-        def on_close():
+        def on_close(event):
             """
             Cleanup function to run when closing the plot.
             """
-            nonlocal is_plot_running
+            global is_plot_running
             ani.event_source.stop()
             plt.close(fig)
             is_plot_running = False
@@ -269,29 +339,71 @@ def UI():
         Starts a server socket to listen for incoming connections and handles data received from clients.
         """
         global clientsocket, server_thread
-    
+        
         def handle_client(clientsocket):
             """
-            Handles incoming data from the client socket and puts it into the plot queue.
+            Handles incoming data from the client socket and categorizes it into forward or reverse data.
             """
+            global yrawforward, yrawreverse, xforwarddata, xreversedata, yforwarddata, yreversedata
+            
             while True:
                 try:
                     data = clientsocket.recv(1024)
                     if not data:
                         break
-                    # Process data and update plot queue
+                    
                     data = data.decode('utf-8').split(',')
-                    x_data = [float(d.split(':')[1]) for d in data if "fbk" in d]
-                    y_data = [float(d.split(':')[1]) for d in data if "col" in d]
-                    plot_queue.put((x_data, y_data))
+                    forward_data = None
+                    reverse_data = None
+                    
+                    # Extract and categorize data as forward or reverse
+                    for item in data:
+                        if "forward_fbk" in item:
+                            forward_fbk = item.split(":")[1].strip()
+                            x = float(forward_fbk)
+                            xforwarddata.append(x)
+                        elif "forward_col" in item:
+                            forward_data = item.split(":")[1].strip()
+                            y = float(forward_data)
+                            yrawforward.append(y)
+                            plot_mean = np.mean(yrawforward)
+                            yforwarddata = [i - plot_mean for i in yrawforward]
+        
+                            # Put forward data in the forward queue
+                            forward_queue.put((xforwarddata.copy(), yforwarddata.copy()))  # Use .copy() to keep the current state
+        
+                        elif "reverse_fbk" in item:
+                            reverse_fbk = item.split(":")[1].strip()
+                            x = float(reverse_fbk)
+                            xreversedata.append(x)
+                        elif "reverse_col" in item:
+                            reverse_data = item.split(":")[1].strip()
+                            y = float(reverse_data)
+                            yrawreverse.append(y)
+                            plot_mean = np.mean(yrawreverse)
+                            yreversedata = [i - plot_mean for i in yrawreverse]
+        
+                            # Put reverse data in the reverse queue
+                            reverse_queue.put((xreversedata.copy(), yreversedata.copy()))  # Use .copy() to keep the current state
+        
+                        elif 'clear' in item:
+                            # Reset data
+                            yrawforward.clear()
+                            yrawreverse.clear()
+                            xforwarddata.clear()
+                            xreversedata.clear()
+                            yforwarddata.clear()
+                            yreversedata.clear()
+        
                 except socket.error as e:
                     print(f"Socket error: {e}")
                     break
                 except Exception as e:
                     print(f"Error: {e}")
                     break
+        
             clientsocket.close()
-    
+        
         def server_loop():
             """
             Main server loop to accept new client connections.
@@ -300,10 +412,15 @@ def UI():
             server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server_socket.bind((socket.gethostname(), 1234))
             server_socket.listen(5)
-    
+            
+            # Server is ready, set the event
+            server_ready_event.set()
+            print("Server is running and ready to accept connections.")
+            
             while True:
                 try:
                     client, address = server_socket.accept()
+                    print(f"Accepted connection from {address}")
                     client_thread = threading.Thread(target=handle_client, args=(client,))
                     client_thread.daemon = True
                     client_thread.start()
@@ -314,7 +431,7 @@ def UI():
                     print(f"Error in server loop: {e}")
                     break
             server_socket.close()
-    
+        
         # Start the server in a separate thread
         server_thread = threading.Thread(target=server_loop, daemon=True)
         server_thread.start()
@@ -328,57 +445,10 @@ def UI():
             clientsocket.close()
             clientsocket = None
     
-    def run_test():
-        """
-        Starts the test and handles live plotting and server communication.
-        """
-        # Start server to handle data communication
-        start_server()
-    
-        # Start plot thread
-        start_plot_thread()
-    
-    def cleanup():
-        """
-        Cleans up resources when the application exits or a test finishes.
-        """
-        global is_plot_running, plot_thread, ani
-    
-        # Stop the server
-        stop_server()
-    
-        # Stop the plot animation
-        if ani:
-            ani.event_source.stop()
-    
-        # Ensure the plot thread stops
-        if plot_thread and plot_thread.is_alive():
-            plot_thread.join()
-    
-        # Clean up global states
-        is_plot_running = False
-        plot_thread = None
-        ani = None
-        gc.collect()        
-        
-    def ask_user_input(prompt, logger):
-        logger.write(prompt + "\n")
-        return logger.read_input()
-
-    def start_rotarycaltest():
-        global yrawforward,yrawreverse,xforwarddata,xreversedata,yforwarddata,yreversedata
-        yrawforward = []
-        yrawreverse = []
-        xforwarddata = []
-        xreversedata = []
-        yforwarddata = []
-        yreversedata = []
-        btn_run_rot.config(state=tk.DISABLED)
-        threading.Thread(target=run_rotarycaltest).start()
-        threading.Thread(target=rotary_live_plot).start()
-
     def run_rotarycaltest():
-        global clientsocket
+        """
+        Runs the rotary calibration test. Handles setup, execution, and resource cleanup.
+        """
         # Save user inputs before closing
         user_data = {
             "axis_name": rot_axis.get(),
@@ -397,13 +467,13 @@ def UI():
             "col_axis": rot_col.get()
         }
         save_user_inputs(user_data)
+        
         try:
             rotarycaltest()
         finally:
-            #ani.event_source.stop()
-            gc.collect()  
-            clientsocket.close()
+            gc.collect()
             window.after(0, btn_run_rot.config, {'state': tk.NORMAL})
+            cleanup_resources()
             
 
     def rotarycaltest():
@@ -531,7 +601,18 @@ def UI():
                 is_cal=is_cal, col_axis=col_axis
             )
             rot_cal.test()
-
+    
+    def cleanup_resources():
+        """
+        Cleans up resources such as threads, connections, and resets global states.
+        """
+        global plot_thread, is_plot_running
+        is_plot_running = False
+        plot_thread = None
+        if clientsocket:
+            clientsocket.close()
+        gc.collect()    
+    
     def import_data_rotary():
         global rot_cal
 
@@ -574,7 +655,7 @@ def UI():
         )
 
         rot_cal.import_data()
-
+        
     def test_type_def():
         global test_type
         if rot_direction.get() == "uni":
