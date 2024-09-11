@@ -20,6 +20,9 @@ from AerotechDataCal import data_and_cal
 from AerotechPDF import aerotech_PDF
 from Logger import TextLogger
 import socket
+import gc
+from memory_profiler import profile
+
 
 class rotary_cal():
     def __init__(self, axis, num_readings, dwell, step_size, travel, units, dia, test_type, sys_serial, st_serial, comments, temp, start_pos, drive, stage_type, oper, text_widget, window, **kwargs):
@@ -58,13 +61,16 @@ class rotary_cal():
 
     def start_collection(self):
         self.collecting = True
-        threading.Thread(target=self.a1_test).start()
-    
+        self.collection_thread = threading.Thread(target=self.a1_test)
+        self.collection_thread.start()
+        
     def stop_collection(self):
         self.collecting = False
+        if self.collection_thread and self.collection_thread.is_alive():
+            self.collection_thread.join()  # Wait for the thread to finish
+        self.collection_thread = None
 
     def a1_test(self, controller: a1.Controller):
-        self.connect_to_server()
         self.controller = controller
         self.Xdir, self.Ydir = [], []
         self.raw_for_pos, self.raw_rev_pos = [], []
@@ -86,7 +92,6 @@ class rotary_cal():
         if self.is_cal:
             verify = self.prompt_user("Calibration is enabled. Do you want to proceed (Y/N)?")
             if verify.lower() == 'y':
-                self.send_data('clear', 'clear')
                 self.clear_text()
                 self.setup_a1_test()
             else:
@@ -95,8 +100,10 @@ class rotary_cal():
                 return
         else:
             self.setup_a1_test()
-            
+       
     def setup_a1_test(self):
+        self.connect_to_server()
+        self.send_data('clear', 'clear')
         status_item_configuration = a1.StatusItemConfiguration()
         status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, self.axis)
         status_item_configuration.axis.add(a1.AxisStatusItem.DriveStatus, self.axis)
@@ -135,6 +142,8 @@ class rotary_cal():
             self.dir_sense()
         else:
             return
+        # Clean up temporary objects
+        del status_item_configuration, drive_status, axis_status
         
     def setup_a1_verification(self):
         self.raw_for_pos, self.raw_rev_pos = [], []
@@ -215,7 +224,7 @@ class rotary_cal():
         self.col_axis = 'X' if abs(self.Xdir[0]) > abs(self.Ydir[0]) else 'Y'
         
         self.uni_a1_test_loop()
-
+    
     def uni_a1_test_loop(self):
         pos_fbk = self.update_position_feedback()
         if pos_fbk != self.start_pos:
@@ -251,7 +260,7 @@ class rotary_cal():
                 self.a1_setup_data()
             else:
                 self.bi_a1_test_loop()
-
+    
     def bi_a1_test_loop(self):
         if self.pos_fbk == self.end_point:
             self.over_travel_move()
@@ -435,7 +444,9 @@ class rotary_cal():
             self.reverse = [i - data_mean for i in self.reverse]
         self.calculate_accuracy_and_repeatability()
         self.generate_reports()
-
+        self.cleanup_data()
+        self.cleanup_resources()
+        
     def calculate_accuracy_and_repeatability(self):
         if self.test_type == "Bidirectional":
             max_forward, min_forward = max(self.forward), min(self.forward)
@@ -627,7 +638,12 @@ class rotary_cal():
         box = tk.Toplevel(self.window)
         box.title(title)
         box.configure(bg='white')
-
+        
+        # Ensure the window stays on top until it loses focus
+        box.wm_attributes("-topmost", True)
+        
+        box.lift()
+        
         custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
         label = tk.Label(box, text=message, bg='white', font=custom_font)
         label.grid(row=0, column=0, columnspan=2, padx=20, pady=10)
@@ -783,11 +799,47 @@ class rotary_cal():
         
         return cal.result
     
-    def connect_to_server(self):
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect((socket.gethostname(), 1234))
+    def connect_to_server(self, retry_count=5, delay=1):
+        """
+        Attempts to connect to the server with retries.
+        """
+        # Make sure retry_count is an integer
+        if not isinstance(retry_count, int):
+            raise TypeError("retry_count must be an integer")
+    
+        for attempt in range(retry_count):
+            try:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client_socket.connect((socket.gethostname(), 1234))
+                print("Connected to server successfully.")
+                return self.client_socket
+            except socket.error as e:
+                print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
+        print("Failed to connect to server after multiple attempts.")
+        return None
     
     def send_data(self, x, y):
-        message = f"{x},{y}\n".encode('utf-8')
-        self.client_socket.sendall(message)
-
+        if self.client_socket:
+            message = f"{x},{y}\n".encode('utf-8')
+            try:
+                self.client_socket.sendall(message)
+            except socket.error as e:
+                print(f"Failed to send data: {e}")
+                self.client_socket.close()  # Close socket on error
+                self.client_socket = None
+                
+    def cleanup_data(self):
+        self.raw_for_pos.clear()
+        self.raw_rev_pos.clear()
+        self.raw_forward.clear()
+        self.raw_reverse.clear()
+        self.for_rev.clear()
+        self.data_accuracy.clear()
+        self.data_rep.clear()
+        print("Data lists cleared to free up memory.")
+        
+    def cleanup_resources(self):
+        # ... existing cleanup code ...
+        gc.collect()  # Force garbage collection to free up memory
+        print("Garbage collection completed.")

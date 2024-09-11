@@ -9,6 +9,7 @@ from tkinter import messagebox, font
 import automation1 as a1
 import math
 import os
+from memory_profiler import profile
 
 class data_and_cal:
     """
@@ -52,7 +53,7 @@ class data_and_cal:
         self.data = kwargs.get('data', 0)
         self.file_path = kwargs.get('file_path', '')
         self.dia = kwargs.get('dia','')
-
+    
     def a1_data_file(self, controller: a1.Controller):
         self.controller = controller
         self.set_automation1_parameters()
@@ -79,7 +80,7 @@ class data_and_cal:
             combined_fbk, combined_data = self.combine_data_lists()
 
             self.write_data_to_file(f, combined_fbk, combined_data)
-
+    
     def set_automation1_parameters(self):
         status_item_configuration = a1.StatusItemConfiguration()
         status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, self.axis)
@@ -111,12 +112,14 @@ class data_and_cal:
         return encoder_types.get(absolute, 'None')
 
     def set_file_paths(self, folder, file_suffix):
-        self.start_path = ('O:/')
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
+        self.start_path = 'O:/'  # Base path
+        self.sys_serial = str(self.sys_serial)  # Convert serial number to string
+        search_str = self.sys_serial[:6]  # Use the first 6 characters of the serial number
+        self.folder_path = self.find_folder(self.start_path, search_str)
         self.data_file_path = os.path.join(self.folder_path, 'TestData', f'{self.sys_serial}-{self.axis}', folder)
         os.makedirs(self.data_file_path, exist_ok=True)
         self.data_file_name = os.path.join(self.data_file_path, f'{self.sys_serial}-{self.axis}{file_suffix}')
-
+    
     def write_file_header(self, f, data_test_type):
         col_axis_str = f'{self.col_axis_X}    {self.col_axis_Y}' if self.test_name == 'Angular' else f'{self.col_axis}'
         data_test_type = '1' if self.test_type == 'Bidirectional' else '0'
@@ -167,7 +170,7 @@ class data_and_cal:
             f'Position     {col_axis_str} Data     Temperature\n'
             ':START\n'
         )
-
+    
     def combine_data_lists(self):
         reverse = self.reverse_data[::-1]
         rev_pos_fbk = self.rev_pos_fbk[::-1]
@@ -180,11 +183,11 @@ class data_and_cal:
         combined_data = list(map(str, map(round_func, combined_data)))
 
         return combined_fbk, combined_data
-
+    
     def write_data_to_file(self, f, combined_fbk, combined_data):
         for fbk, data in zip(combined_fbk, combined_data):
             f.write(f'{fbk}     {data}     {self.temp}\n')
-
+    
     def make_cal_file(self):
         self.set_cal_file_paths()
         if self.data == 1:
@@ -200,8 +203,10 @@ class data_and_cal:
             self.create_other_file(cal_data, corunit)
 
     def set_cal_file_paths(self):
-        self.start_path = ('O:/')
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
+        self.start_path = 'O:/'  # Base path
+        self.sys_serial = str(self.sys_serial)  # Convert serial number to string
+        search_str = self.sys_serial[:6]  # Use the first 6 characters of the serial number
+        self.folder_path = self.find_folder(self.start_path, search_str)
         self.cal_file_path = os.path.join(self.folder_path, 'Customer Files', 'CalFiles')
         self.file_name = os.path.join(self.cal_file_path, f'{self.sys_serial}-{self.axis}.cal')
 
@@ -425,4 +430,33 @@ class data_and_cal:
         height = sum(widget.winfo_reqheight() for widget in df.winfo_children())
         return width + width_padding, height + height_padding
 
-
+    def find_folder(self, base_path, search_str):
+        try:
+            # Iterate over all entries in the given directory
+            with os.scandir(base_path) as it:
+                for entry in it:
+                    if entry.is_dir():  # Check if the entry is a directory
+                        # Debugging print to see what folder is being checked
+                        print(f"Checking folder: {entry.path}")
+                        
+                        # Check if the search string is in the directory name
+                        if search_str in entry.name:
+                            return entry.path
+                        
+                        # Recursively search in subdirectories
+                        subfolder_result = self.find_folder(entry.path, search_str)  # Recursive call
+                        if subfolder_result:
+                            return subfolder_result  # Return if found in subdirectory
+    
+        # Handle exceptions such as permission issues or missing directories
+        except PermissionError as e:
+            print(f"PermissionError accessing {base_path}: {e}")
+            pass  # Skip folders that cannot be accessed
+        except FileNotFoundError as e:
+            print(f"FileNotFoundError: {e}")
+            pass  # Skip if a directory is not found (rare, but possible)
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            pass  # Catch any other unexpected errors
+        
+        return None  # Return None if the folder isn't found

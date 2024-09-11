@@ -20,8 +20,10 @@ from AngularTest import angular
 from Logger import TextLogger
 import socket
 import gc
+import time
 import json
 import queue
+from memory_profiler import profile
 
 yrawforward = []
 zrawforward = []
@@ -56,6 +58,7 @@ ani = None
 # Initialize plot line objects as None
 forward_line = None
 reverse_line = None
+server_running = True  # Add a global flag to control server loop
 
 # JSON file path to store user inputs
 USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
@@ -246,7 +249,7 @@ def UI():
         
         # Check server readiness without blocking the GUI
         check_server_ready()
-
+    
     def check_server_ready():
         """
         Checks if the server is ready without blocking the GUI.
@@ -266,6 +269,7 @@ def UI():
         global test_thread
         test_thread = threading.Thread(target=run_rotarycaltest, daemon=True)
         test_thread.start()
+        print('Test Thread Started')
     
     def start_plot_thread():
         """
@@ -275,32 +279,42 @@ def UI():
         if not is_plot_running:
             is_plot_running = True
             plot_thread = threading.Thread(target=rotary_live_plot, daemon=True)
-            plot_thread.start()
-            
+            plot_thread.start()      
+    
     def rotary_live_plot():
         """
         Function to handle live plotting. Sets up the plot, initializes the animation, and manages updates from a queue.
         """
-        global ani, forward_line, reverse_line
-    
-        # Create figure and axis for the plot
+        global ani, forward_line, reverse_line, canvas, fig
+        
+        # Define font settings
+        label_font = {'family': 'serif', 'weight': 'normal', 'size': 14}
+        title_font = {'family': 'serif', 'weight': 'bold', 'size': 16}
+        tick_font = {'size': 12, 'weight': 'normal'}
+        label_color = 'darkred'  # Define color separately
+        
+        # Create a new figure and axis for the plot
         fig, ax = plt.subplots()
         ax.set_facecolor("white")
-        ax.set_xlabel("Position", color='darkred')
-        ax.set_ylabel("Accuracy", color='darkred')
-        ax.set_title("Live Plot of Position vs Accuracy")
+        ax.set_xlabel("Position", fontdict=label_font, color=label_color)
+        ax.set_ylabel("Accuracy", fontdict=label_font, color=label_color)
+        ax.set_title("Live Plot of Position vs Accuracy", fontdict=title_font)
         
         # Initialize the line objects for forward and reverse data
         forward_line, = ax.plot([], [], 'b-o', label='Forward')
         reverse_line, = ax.plot([], [], 'r-x', label='Reverse')
-    
+        
+        # Set font size for tick labels
+        ax.tick_params(axis='both', which='major', labelsize=tick_font['size'])
+        
+        # Create a new canvas for the plot and add it to the Tkinter widget
         canvas = FigureCanvasTkAgg(fig, master=tab1)
         canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13, 0), sticky='nsew')
         ax.grid(False)
-    
+        
         # Add legend
-        ax.legend()
-    
+        ax.legend(loc='upper right', prop={'size': 10})
+        
         def update_plot(frame):
             """
             Update function for the animation. Fetches data from the queues and updates the plot.
@@ -319,27 +333,36 @@ def UI():
             ax.relim()
             ax.autoscale_view()
             canvas.draw()
-    
+        
         # Initialize the animation
         ani = FuncAnimation(fig, update_plot, interval=100)
-    
+        
         def on_close(event):
             """
             Cleanup function to run when closing the plot.
             """
-            global is_plot_running
-            ani.event_source.stop()
+            global is_plot_running, ani
+            if ani is not None:  # Check if ani is initialized
+                ani.event_source.stop()
             plt.close(fig)
             is_plot_running = False
-    
+            stop_server()  # Stop the server when the plot is closed
+            cleanup_resources()  # Cleanup resources
+        
         fig.canvas.mpl_connect('close_event', on_close)
     
     def start_server():
         """
         Starts a server socket to listen for incoming connections and handles data received from clients.
         """
-        global clientsocket, server_thread
+        global clientsocket, server_thread, server_running
         
+        # Ensure previous server is stopped
+        if server_running:
+            stop_server()  # Stop the server if it is still running
+    
+        server_running = True  # Reset the flag
+            
         def handle_client(clientsocket):
             """
             Handles incoming data from the client socket and categorizes it into forward or reverse data.
@@ -368,10 +391,10 @@ def UI():
                             yrawforward.append(y)
                             plot_mean = np.mean(yrawforward)
                             yforwarddata = [i - plot_mean for i in yrawforward]
-        
+    
                             # Put forward data in the forward queue
                             forward_queue.put((xforwarddata.copy(), yforwarddata.copy()))  # Use .copy() to keep the current state
-        
+    
                         elif "reverse_fbk" in item:
                             reverse_fbk = item.split(":")[1].strip()
                             x = float(reverse_fbk)
@@ -382,10 +405,10 @@ def UI():
                             yrawreverse.append(y)
                             plot_mean = np.mean(yrawreverse)
                             yreversedata = [i - plot_mean for i in yrawreverse]
-        
+    
                             # Put reverse data in the reverse queue
                             reverse_queue.put((xreversedata.copy(), yreversedata.copy()))  # Use .copy() to keep the current state
-        
+    
                         elif 'clear' in item:
                             # Reset data
                             yrawforward.clear()
@@ -394,7 +417,7 @@ def UI():
                             xreversedata.clear()
                             yforwarddata.clear()
                             yreversedata.clear()
-        
+    
                 except socket.error as e:
                     print(f"Socket error: {e}")
                     break
@@ -408,43 +431,80 @@ def UI():
             """
             Main server loop to accept new client connections.
             """
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((socket.gethostname(), 1234))
-            server_socket.listen(5)
-            
-            # Server is ready, set the event
-            server_ready_event.set()
-            print("Server is running and ready to accept connections.")
-            
-            while True:
-                try:
-                    client, address = server_socket.accept()
-                    print(f"Accepted connection from {address}")
-                    client_thread = threading.Thread(target=handle_client, args=(client,))
-                    client_thread.daemon = True
-                    client_thread.start()
-                except socket.error as e:
-                    print(f"Server socket error: {e}")
-                    break
-                except Exception as e:
-                    print(f"Error in server loop: {e}")
-                    break
-            server_socket.close()
+            global server_running
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                print("Binding server socket to address...")
+                s.bind((socket.gethostname(), 1234))
+                s.listen(5)  # Start listening on the server
+                print('Server is running and listening for connections...')
+    
+                # Server is ready, set the event
+                server_ready_event.set()
+    
+                while server_running:  # Use flag to control loop
+                    try:
+                        client, address = s.accept()
+                        print(f"Accepted connection from {address}")
+                        client_thread = threading.Thread(target=handle_client, args=(client,))
+                        client_thread.daemon = True
+                        client_thread.start()
+                    except socket.error as e:
+                        print(f"Server socket error: {e}")
+                        break
+                    except Exception as e:
+                        print(f"Error in server loop: {e}")
+                        break
+            except socket.error as e:
+                print(f"Server startup error: {e}")
+            finally:
+                s.close()
+                print("Server socket closed.")
         
         # Start the server in a separate thread
         server_thread = threading.Thread(target=server_loop, daemon=True)
         server_thread.start()
     
+        # Wait a short time to ensure the server is up and running before proceeding
+        time.sleep(1)
+    print("Server initialization complete.")
     def stop_server():
         """
         Stops the server and closes any open client connections.
         """
-        global clientsocket
-        if clientsocket:
-            clientsocket.close()
-            clientsocket = None
+        global clientsocket, server_thread, server_running
     
+        print("Attempting to stop the server...")
+    
+        # Check if the server is running
+        if not server_running:
+            print("Server is already stopped.")
+            return
+    
+        server_running = False  # Stop the server loop
+    
+        # Close the client socket if it exists
+        if clientsocket:
+            try:
+                print("Closing client socket...")
+                clientsocket.shutdown(socket.SHUT_RDWR)
+                clientsocket.close()
+                clientsocket = None
+                print("Client socket closed.")
+            except Exception as e:
+                print(f"Error closing client socket: {e}")
+    
+        # Ensure the server socket is also closed properly
+        if server_thread and server_thread.is_alive():
+            print("Waiting for server thread to stop...")
+            server_thread.join(timeout=5)  # Wait up to 5 seconds for the thread to close
+            print("Server thread stopped.")
+    
+        # Flush output to avoid lag
+        sys.stdout.flush()
+        print("Server successfully stopped.")
+        
     def run_rotarycaltest():
         """
         Runs the rotary calibration test. Handles setup, execution, and resource cleanup.
@@ -473,9 +533,7 @@ def UI():
         finally:
             gc.collect()
             window.after(0, btn_run_rot.config, {'state': tk.NORMAL})
-            cleanup_resources()
-            
-
+     
     def rotarycaltest():
         axis = str(rot_axis.get())
         num_readings = 5
@@ -588,12 +646,15 @@ def UI():
                         controller = a1.Controller.connect_usb()
                     except:
                         messagebox.showerror('No Device', 'No Devices Present. Check Connections.')
-
+            # Clear objects that are no longer needed
+            del connected_axes, non_virtual_axes, status_item_configuration, result
+        
+            # Run the test
             rot_cal = rotary_cal(
                 axis, num_readings, dwell, step_size, travel, units, dia, test_type, sys_serial, 
                 st_serial, comments, temp, start_pos, drive, stage_type, oper, txt_outStr, window
             )
-            rot_cal.a1_test(controller)
+            rot_cal.a1_test(controller)  
         else:
             rot_cal = rotary_cal(
                 axis, num_readings, dwell, step_size, travel, units, dia, test_type, sys_serial, 
@@ -601,17 +662,39 @@ def UI():
                 is_cal=is_cal, col_axis=col_axis
             )
             rot_cal.test()
-    
-    def cleanup_resources():
+        
+        # Properly disconnect controller and release memory
+        if controller:
+            controller.disconnect()
+            controller = None
+            
+        stop_server()
+        cleanup_resources()
+        
+        return
+    def cleanup_resources(rot_cal=None):
+        print('\nCleanup Resources')
         """
         Cleans up resources such as threads, connections, and resets global states.
         """
-        global plot_thread, is_plot_running
+        global plot_thread, is_plot_running, ani, canvas, fig
         is_plot_running = False
+        
+        if ani:
+            ani.event_source.stop()
+            ani = None
+        
         plot_thread = None
+        
         if clientsocket:
             clientsocket.close()
-        gc.collect()    
+        
+        # Clean up rot_cal specific resources
+        if rot_cal:
+            del rot_cal
+        
+        gc.collect()
+        print("Resources cleaned up and garbage collection completed.")
     
     def import_data_rotary():
         global rot_cal

@@ -14,6 +14,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from matplotlib import font_manager as fm
+from memory_profiler import profile
+import gc
 
 class aerotech_PDF():
     def __init__(self, test_type, sys_serial, st_serial, current_date, current_time, axis, stage_type, drive, step_size, for_pos_fbk, temp, units, comments, travel, start_pos, oper, **kwargs):
@@ -58,10 +60,11 @@ class aerotech_PDF():
         self.root.withdraw()
     
     def rotary_pdf(self):
-        self.start_path = ('O:/')
-        self.sys_serial = str(self.sys_serial)
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
-
+        self.start_path = 'O:/'  # Base path
+        self.sys_serial = str(self.sys_serial)  # Convert serial number to string
+        search_str = self.sys_serial[:6]  # Use the first 6 characters of the serial number
+        self.folder_path = self.find_folder(self.start_path, search_str)
+        
         # This cell of the script will be used to generate a pdf in the AerotechFooter Format
         #global fig
     
@@ -144,16 +147,16 @@ class aerotech_PDF():
                 
         pdf_file_path = self.folder_path + '/Customer Files/Plots'
         save_file = pdf_file_path + '/' + output_file
-        fig.get_figure().savefig(save_file)
+        
+        # Save the figure and clean up
+        fig.savefig(save_file, format='pdf')
+        plt.close(fig)  # Close the figure to free up memory
+        del fig, ax1, ax2, ax3, ax4  # Delete references to the figure and axes
+        gc.collect()  # Explicitly call garbage collection to free memory
         
         self.rotary_plotly()
-        
+
     def rotary_plotly(self):
-        self.start_path = ('O:/')
-        self.sys_serial = str(self.sys_serial)
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
-        
-        
         # This cell of the script will be used to generate a pdf in the AerotechFooter Format
         #global fig
         for attr in ['pk_pk']:
@@ -282,17 +285,11 @@ class aerotech_PDF():
         plotly_html_file = os.path.join(html_file_path, html_output_file)
         fig.write_html(plotly_html_file)
         
-        import webbrowser
-        webbrowser.open(plotly_html_file)
+        del fig  # Delete the figure to free up memory
+        gc.collect()  # Explicitly call garbage collection to free memory
         
-        #fig.write_image(save_file)
-        fig.show() 
-        
+        self.reset_data()
     def angular_pdf(self):
-        self.start_path = ('O:/')
-        self.sys_serial = str(self.sys_serial)
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
-
         # This cell of the script will be used to generate a pdf in the AerotechFooter Format
         #global fig
         for attr in ['pk_pk_X', 'pk_pk_Y']:
@@ -360,16 +357,16 @@ class aerotech_PDF():
                 
         pdf_file_path = self.folder_path + '/Customer Files/Plots'
         save_file = pdf_file_path + '/' + output_file
-        fig.get_figure().savefig(save_file)
+        
+        # Save the figure and clean up
+        fig.savefig(save_file, format='pdf')
+        plt.close(fig)  # Close the figure to free up memory
+        del fig, ax1, ax2, ax3, ax4  # Delete references to the figure and axes
+        gc.collect()  # Explicitly call garbage collection to free memory
         
         self.angular_plotly()
         
     def angular_plotly(self):
-        self.start_path = ('O:/')
-        self.sys_serial = str(self.sys_serial)
-        self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
-        
-        
         # This cell of the script will be used to generate a pdf in the AerotechFooter Format
         #global fig
         for attr in ['pk_pk_X', 'pk_pk_Y']:
@@ -455,8 +452,49 @@ class aerotech_PDF():
         plotly_html_file = os.path.join(html_file_path, html_output_file)
         fig.write_html(plotly_html_file)
         
-        import webbrowser
-        webbrowser.open(plotly_html_file)
+        del fig  # Delete the figure to free up memory
+        gc.collect()  # Explicitly call garbage collection to free memory
         
-        #fig.write_image(save_file)
-        fig.show()
+        self.reset_data()
+        
+    def find_folder(self, base_path, search_str):
+        try:
+            # Iterate over all entries in the given directory
+            with os.scandir(base_path) as it:
+                for entry in it:
+                    if entry.is_dir():  # Check if the entry is a directory
+                        # Debugging print to see what folder is being checked
+                        print(f"Checking folder: {entry.path}")
+                        
+                        # Check if the search string is in the directory name
+                        if search_str in entry.name:
+                            return entry.path
+                        
+                        # Recursively search in subdirectories
+                        subfolder_result = self.find_folder(entry.path, search_str)  # Recursive call
+                        if subfolder_result:
+                            return subfolder_result  # Return if found in subdirectory
+    
+        # Handle exceptions such as permission issues or missing directories
+        except PermissionError as e:
+            print(f"PermissionError accessing {base_path}: {e}")
+            pass  # Skip folders that cannot be accessed
+        except FileNotFoundError as e:
+            print(f"FileNotFoundError: {e}")
+            pass  # Skip if a directory is not found (rare, but possible)
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            pass  # Catch any other unexpected errors
+        
+        return None  # Return None if the folder isn't found
+    
+    def reset_data(self):
+        """
+        Reset data lists and other attributes to free memory after a test run.
+        """
+        self.forward = []
+        self.reverse = []
+        self.for_pos_fbk = []
+        self.rev_pos_fbk = []
+        # Clear other data lists or structures as necessary
+        # Set to None or empty if appropriate
