@@ -20,6 +20,7 @@ from AerotechDataCal import data_and_cal
 from AerotechPDF import aerotech_PDF
 from Logger import TextLogger
 import socket
+import gc
 
 class angular:
     '''
@@ -238,6 +239,8 @@ class angular:
         self.generate_report()
     
         messagebox.showinfo('Test Complete', 'Test Is Complete')
+        self.cleanup_data()
+        self.cleanup_resources()
 
     def prepare_data_for_processing(self):
         # Prepares and organizes data for further processing
@@ -424,14 +427,34 @@ class angular:
 
         return box.result
 
-    def connect_to_server(self):
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect((socket.gethostname(), 1234))
-        print("Connected to server")
+    def connect_to_server(self, retry_count=5, delay=1):
+        """
+        Attempts to connect to the server with retries.
+        """
+        # Make sure retry_count is an integer
+        if not isinstance(retry_count, int):
+            raise TypeError("retry_count must be an integer")
+    
+        for attempt in range(retry_count):
+            try:
+                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client_socket.connect((socket.gethostname(), 1234))
+                print("Connected to server successfully.")
+                return self.client_socket
+            except socket.error as e:
+                print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
+        print("Failed to connect to server after multiple attempts.")
+        return None
 
     def send_data(self, x, y, z):
         message = f"{x},{y},{z}\n".encode('utf-8')
-        self.client_socket.sendall(message)
+        try:
+            self.client_socket.sendall(message)
+        except socket.error as e:
+            print(f"Failed to send data: {e}")
+            self.client_socket.close()  # Close socket on error
+            self.client_socket = None
 
     # Re-implemented as methods
     def open_data_box(self):
@@ -445,3 +468,26 @@ class angular:
 
     def open_ver_box(self):
         return self.open_message_box('Calibration Verification', 'Verification Interval:', ok_text="OK", cancel_text="Cancel")
+    
+    def cleanup_data(self):
+        self.Xdir.clear()
+        self.Ydir.clear()
+        self.raw_for_pos.clear()
+        self.raw_rev_pos.clear()
+        self.for_pos_fbk.clear()
+        self.rev_pos_fbk.clear()
+        self.forward_X.clear()
+        self.forward_Y.clear()
+        self.reverse_X.clear()
+        self.reverse_Y.clear()
+        self.for_rev_X.clear()
+        self.for_rev_Y.clear()
+        self.data_accuracy_X.clear()
+        self.data_accuracy_Y.clear()
+
+        #print("Data lists cleared to free up memory.")
+        
+    def cleanup_resources(self):
+        # ... existing cleanup code ...
+        gc.collect()  # Force garbage collection to free up memory
+        #print("Garbage collection completed.")

@@ -135,13 +135,11 @@ class rotary_cal():
         self.controller.runtime.commands.motion.moveabsolute([self.axis], [0], [self.speed])
         time.sleep(abs(self.pos_fbk / self.speed))
         
-        align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready. Hit 'Esc' key to cancel")
+        align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready")
         if align == ">":
             self.clear_text()
             time.sleep(2)
             self.dir_sense()
-        else:
-            return
         # Clean up temporary objects
         del status_item_configuration, drive_status, axis_status
         
@@ -444,8 +442,6 @@ class rotary_cal():
             self.reverse = [i - data_mean for i in self.reverse]
         self.calculate_accuracy_and_repeatability()
         self.generate_reports()
-        self.cleanup_data()
-        self.cleanup_resources()
         
     def calculate_accuracy_and_repeatability(self):
         if self.test_type == "Bidirectional":
@@ -539,6 +535,9 @@ class rotary_cal():
                     self.setup_a1_verification()
             else:
                 messagebox.showinfo('Test Complete', 'Test Is Complete')
+                
+        self.cleanup_data()
+        self.cleanup_resources()
 
     def update_position_feedback(self):
         status_item_configuration = a1.StatusItemConfiguration()
@@ -834,6 +833,10 @@ class rotary_cal():
         self.raw_rev_pos.clear()
         self.raw_forward.clear()
         self.raw_reverse.clear()
+        self.for_pos_fbk = []
+        self.rev_pos_fbk = []
+        self.forward = []
+        self.reverse = []
         self.for_rev.clear()
         self.data_accuracy.clear()
         self.data_rep.clear()

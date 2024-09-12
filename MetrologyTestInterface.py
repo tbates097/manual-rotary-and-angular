@@ -135,7 +135,7 @@ def UI():
     screen_height = window.winfo_screenheight()
 
     window_height = 900
-    window_width = 1700
+    window_width = 1900
 
     x_cordinate = int((screen_width / 2) - (window_width / 2))
     y_cordinate = int((screen_height / 2) - (window_height / 2))
@@ -218,14 +218,39 @@ def UI():
     ang_start_value = stored_data.get("start_position", 0)
     ang_travel_value = stored_data.get("travel", 100)
     ang_step_value = stored_data.get("step_size", 5)
-    ang_controller_value = stored_data.get("controller", '')
-    ang_units_value = stored_data.get("units", '')
     ang_sys_value = stored_data.get("system_serial_number", '"System Serial Number"')
     ang_st_value = stored_data.get("stage_serial_number", '"Stage Serial Number"')
     ang_op_value = stored_data.get("operator", '"Your Initials"')
     ang_part_value = stored_data.get("part_number", '"Part Number"')
     ang_temp_value = stored_data.get("temp", 20)
     ang_comm_value = stored_data.get("comments", "")
+    
+    # Create a Frame to hold the Text widget and the Scrollbar
+    frame = tk.Frame(master=tab1)
+
+    # Create the Text widget
+    txt_outStr = tk.Text(master=frame, state=tk.DISABLED, height=10, fg='white', bg='black')
+
+    # Create the Scrollbar widget
+    outStr_scroll = tk.Scrollbar(master=frame, orient=tk.VERTICAL)
+
+    # Link the Scrollbar to the Text widget
+    txt_outStr.configure(yscrollcommand=outStr_scroll.set)
+    outStr_scroll.config(command=txt_outStr.yview)
+
+    # Pack the Text widget and the Scrollbar inside the Frame
+    txt_outStr.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    outStr_scroll.pack(side=tk.LEFT, fill=tk.Y)
+
+    # Grid the Frame containing the Text widget and the Scrollbar
+    frame.grid(row=out_row, column=0, columnspan=7, padx=5, pady=5, sticky='nsew')
+
+    # Create the logger object
+    text_logger = TextLogger(txt_outStr)
+
+    # Configure the grid to expand the Frame
+    tab1.grid_rowconfigure(out_row, weight=1)
+    tab1.grid_columnconfigure(0, weight=1)
     
     def start_rotarycaltest():
         """
@@ -269,7 +294,7 @@ def UI():
         global test_thread
         test_thread = threading.Thread(target=run_rotarycaltest, daemon=True)
         test_thread.start()
-        print('Test Thread Started')
+        #print('Test Thread Started')
     
     def start_plot_thread():
         """
@@ -435,10 +460,10 @@ def UI():
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                print("Binding server socket to address...")
+                #print("Binding server socket to address...")
                 s.bind((socket.gethostname(), 1234))
                 s.listen(5)  # Start listening on the server
-                print('Server is running and listening for connections...')
+                #print('Server is running and listening for connections...')
     
                 # Server is ready, set the event
                 server_ready_event.set()
@@ -446,7 +471,7 @@ def UI():
                 while server_running:  # Use flag to control loop
                     try:
                         client, address = s.accept()
-                        print(f"Accepted connection from {address}")
+                        #print(f"Accepted connection from {address}")
                         client_thread = threading.Thread(target=handle_client, args=(client,))
                         client_thread.daemon = True
                         client_thread.start()
@@ -468,18 +493,18 @@ def UI():
     
         # Wait a short time to ensure the server is up and running before proceeding
         time.sleep(1)
-    print("Server initialization complete.")
+    #print("Server initialization complete.")
     def stop_server():
         """
         Stops the server and closes any open client connections.
         """
         global clientsocket, server_thread, server_running
     
-        print("Attempting to stop the server...")
+        #print("Attempting to stop the server...")
     
         # Check if the server is running
         if not server_running:
-            print("Server is already stopped.")
+            #print("Server is already stopped.")
             return
     
         server_running = False  # Stop the server loop
@@ -487,23 +512,23 @@ def UI():
         # Close the client socket if it exists
         if clientsocket:
             try:
-                print("Closing client socket...")
+                #print("Closing client socket...")
                 clientsocket.shutdown(socket.SHUT_RDWR)
                 clientsocket.close()
                 clientsocket = None
-                print("Client socket closed.")
+                #print("Client socket closed.")
             except Exception as e:
                 print(f"Error closing client socket: {e}")
     
         # Ensure the server socket is also closed properly
         if server_thread and server_thread.is_alive():
-            print("Waiting for server thread to stop...")
+            #print("Waiting for server thread to stop...")
             server_thread.join(timeout=5)  # Wait up to 5 seconds for the thread to close
-            print("Server thread stopped.")
+            #print("Server thread stopped.")
     
         # Flush output to avoid lag
         sys.stdout.flush()
-        print("Server successfully stopped.")
+        #print("Server successfully stopped.")
         
     def run_rotarycaltest():
         """
@@ -535,6 +560,16 @@ def UI():
             window.after(0, btn_run_rot.config, {'state': tk.NORMAL})
      
     def rotarycaltest():
+        def prompt_user(message):
+            text_logger.write(message)
+            txt_outStr.delete(1.0, tk.END)
+            return text_logger.read_input()
+
+        def clear_text():
+            txt_outStr.delete(1.0, tk.END)
+        
+        sys.stdout = text_logger
+        
         axis = str(rot_axis.get())
         num_readings = 5
         dwell = 1
@@ -673,7 +708,7 @@ def UI():
         
         return
     def cleanup_resources(rot_cal=None):
-        print('\nCleanup Resources')
+        #print('\nCleanup Resources')
         """
         Cleans up resources such as threads, connections, and resets global states.
         """
@@ -694,7 +729,7 @@ def UI():
             del rot_cal
         
         gc.collect()
-        print("Resources cleaned up and garbage collection completed.")
+        #print("Resources cleaned up and garbage collection completed.")
     
     def import_data_rotary():
         global rot_cal
@@ -800,7 +835,7 @@ def UI():
         start_path = ('O:/')
         folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(start_path) for dir_name in dirs if str(sys_serial[0:6]) in dir_name), None)
         pdf_file_path = folder_path + '/Customer Files/Plots'
-        print(pdf_file_path)
+        #print(pdf_file_path)
 
         if os.path.exists(pdf_file_path):
             try:
@@ -971,155 +1006,338 @@ def UI():
     btn_open_rot = tk.Button(master=tab1, text="Open Plot", width=25, height=1, command=open_rotary_Plot)
     btn_open_rot.grid(row=run_row, column=2, padx=5, pady=5)
 
-
-    # Create a Frame to hold the Text widget and the Scrollbar
-    frame = tk.Frame(master=tab1)
-
-    # Create the Text widget
-    txt_outStr = tk.Text(master=frame, state=tk.DISABLED, height=10, fg='white', bg='black')
-
-    # Create the Scrollbar widget
-    outStr_scroll = tk.Scrollbar(master=frame, orient=tk.VERTICAL)
-
-    # Link the Scrollbar to the Text widget
-    txt_outStr.configure(yscrollcommand=outStr_scroll.set)
-    outStr_scroll.config(command=txt_outStr.yview)
-
-    # Pack the Text widget and the Scrollbar inside the Frame
-    txt_outStr.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    outStr_scroll.pack(side=tk.LEFT, fill=tk.Y)
-
-    # Grid the Frame containing the Text widget and the Scrollbar
-    frame.grid(row=out_row, column=0, columnspan=7, padx=5, pady=5, sticky='nsew')
-
-    # Create the logger object
-    logger1 = TextLogger(txt_outStr)
-
-    # Configure the grid to expand the Frame
-    tab1.grid_rowconfigure(out_row, weight=1)
-    tab1.grid_columnconfigure(0, weight=1)
-
     '''
     Tab 2: Angular Testing
     
     This tab is for running pitch, yaw, and roll tests
     '''
     
-    def angular_live_plot():
-        """
-        Initialize and update the live plot for angular testing.
-        """
-        global ani1, ani2, col_axis_X, col_axis_Y
-        fig1, ax1, canvas1 = setup_figure(tab2, 0, 4, col_axis_X, "Angular Errors", (17, 0))
-        fig2, ax2, canvas2 = setup_figure(tab2, 11, 4, col_axis_Y, "", (7, 0))
+    # Create a Frame to hold the Text widget and the Scrollbar
+    frame1 = tk.Frame(tab2)
+
+    # Create the Text widget
+    txt_outStr1 = tk.Text(master=frame1, state=tk.DISABLED, height=10, fg='white', bg='black')
+
+    # Create the Scrollbar widget
+    outStr_scroll1 = tk.Scrollbar(master=frame1, orient=tk.VERTICAL)
+
+    # Link the Scrollbar to the Text widget
+    txt_outStr1.configure(yscrollcommand=outStr_scroll1.set)
+    outStr_scroll1.config(command=txt_outStr1.yview)
+
+    # Pack the Text widget and the Scrollbar inside the Frame
+    txt_outStr1.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    outStr_scroll1.pack(side=tk.LEFT, fill=tk.Y)
+
+    # Grid the Frame containing the Text widget and the Scrollbar
+    frame1.grid(row=out_row, column=0, columnspan=7, padx=5, pady=5, sticky='nsew')
+
+    # Create the logger object
+    text_logger1 = TextLogger(txt_outStr1)
+
+    # Configure the grid to expand the Frame
+    tab2.grid_rowconfigure(out_row, weight=1)
+    tab2.grid_columnconfigure(0, weight=1)
     
-        # Start server thread to handle incoming data
-        server_thread = threading.Thread(target=run_server, daemon=True)
+    def start_angulartest():
+        """
+        Initializes required data for the angular test and disables the run button.
+        """
+        global yrawforward, zrawforward, yrawreverse, zrawreverse, xforwarddata, xreversedata, yforwarddata, zforwarddata, zreversedata, yreversedata
+        
+        # Clear data
+        yrawforward, zrawforward = [], []
+        yrawreverse, zrawreverse = [], []
+        xforwarddata, xreversedata = [], []
+        yforwarddata, yreversedata = [], []
+        zforwarddata, zreversedata = [], []
+        
+        # Disable the Run button during the test
+        btn_run_ang.config(state=tk.DISABLED)
+        
+        # Start the server first
+        ang_start_server()
+        
+        # Start the plot thread
+        ang_start_plot_thread()
+        
+        # Check server readiness without blocking the GUI
+        ang_check_server_ready()
+    
+    def ang_check_server_ready():
+        """
+        Checks if the server is ready without blocking the GUI.
+        If the server is ready, starts the test thread.
+        """
+        if server_ready_event.is_set():
+            # Start the test thread if the server is ready
+            ang_start_test_thread()
+        else:
+            # Re-check after 100ms
+            window.after(100, ang_check_server_ready)
+    
+    def ang_start_test_thread():
+        """
+        Starts the test thread for running the angular test.
+        """
+        global test_thread
+        test_thread = threading.Thread(target=run_angulartest, daemon=True)
+        test_thread.start()
+    
+    def ang_start_plot_thread():
+        """
+        Starts a thread for handling live plot updates. Ensures that only one plot thread is running at a time.
+        """
+        global plot_thread, is_plot_running
+        if not is_plot_running:
+            is_plot_running = True
+            plot_thread = threading.Thread(target=angular_live_plot, daemon=True)
+            plot_thread.start()
+    
+    def angular_live_plot(retry_count=5, delay=1):
+        """
+        Function to handle live plotting for angular errors. Sets up plots for forward and reverse data.
+        """
+        # Ensure retry_count is an integer
+        if not isinstance(retry_count, int):
+            raise TypeError("retry_count must be an integer")
+    
+        global xforwarddata, xreversedata, yforwarddata, yreversedata, col_axis_X, col_axis_Y
+        global fig1, ax1, fig2, ax2, plot_mean, ani1, ani2, canvas1, canvas2
+    
+        # Initialize data variables if they aren't already
+        xforwarddata = xforwarddata if xforwarddata else []
+        xreversedata = xreversedata if xreversedata else []
+        yforwarddata = yforwarddata if yforwarddata else []
+        yreversedata = yreversedata if yreversedata else []
+        
+        # Define font settings
+        label_font = {'family': 'serif', 'weight': 'normal', 'size': 12}
+        title_font = {'family': 'serif', 'weight': 'bold', 'size': 14}
+        tick_font = {'size': 12, 'weight': 'normal'}
+        label_color = 'darkred'  # Define color separately
+        
+        # Create a Figure and Axes for the first plot
+        fig1, ax1 = plt.subplots()
+        ax1.set_facecolor("white")
+        ax1.set_xlabel("Position", fontdict=label_font, color=label_color)
+        ax1.set_ylabel(f"{col_axis_X}", fontdict=label_font, color=label_color)
+        ax1.set_title("Angular Errors", fontdict=title_font)
+    
+        canvas1 = FigureCanvasTkAgg(fig1, master=tab2)
+        canvas1.get_tk_widget().grid(row=0, column=4, rowspan=10, columnspan=3, padx=1, pady=(17, 0), sticky='nsew')
+        ax1.grid(False)
+    
+        # Create a Figure and Axes for the second plot
+        fig2, ax2 = plt.subplots()
+        ax2.set_facecolor("white")
+        ax2.set_xlabel("Position", fontdict=label_font, color=label_color)
+        ax2.set_ylabel(f"{col_axis_Y}", fontdict=label_font, color=label_color)
+        ax2.set_title("Angular Errors", fontdict=title_font)
+        
+        # Set the font size for the tick labels
+        ax1.tick_params(axis='both', which='major', labelsize=tick_font['size'])
+        ax2.tick_params(axis='both', which='major', labelsize=tick_font['size'])
+        
+        canvas2 = FigureCanvasTkAgg(fig2, master=tab2)
+        canvas2.get_tk_widget().grid(row=11, column=4, rowspan=10, columnspan=3, padx=1, pady=(7, 0), sticky='nsew')
+        ax2.grid(False)
+    
+        def update_plot(frame):
+            """
+            Update function for the animation. Clears and redraws the plot with new data.
+            """
+            global xforwarddata, xreversedata, yforwarddata, yreversedata
+    
+            # Clear the current plots
+            ax1.cla()
+            ax2.cla()
+    
+            # Update the plots with new data
+            ax1.plot(xforwarddata, yforwarddata, color='b', marker='o', label='Forward')
+            ax1.plot(xreversedata, yreversedata, color='r', marker='x', label='Reverse')
+            ax2.plot(xforwarddata, zforwarddata, color='b', marker='o', label='Forward')
+            ax2.plot(xreversedata, zreversedata, color='r', marker='x', label='Reverse')
+    
+            # Reset the labels and title
+            ax1.set_xlabel("Position", fontdict=label_font, color=label_color)
+            ax1.set_ylabel(f"{col_axis_X}", fontdict=label_font, color=label_color)
+            ax1.set_title("Angular Errors", fontdict=title_font)
+    
+            ax2.set_xlabel("Position", fontdict=label_font, color=label_color)
+            ax2.set_ylabel(f"{col_axis_Y}", fontdict=label_font, color=label_color)
+            ax2.set_title("Angular Errors", fontdict=title_font)
+    
+            # Set the font size for the tick labels
+            ax1.tick_params(axis='both', which='major', labelsize=tick_font['size'])
+            ax2.tick_params(axis='both', which='major', labelsize=tick_font['size'])
+    
+            # Draw the updated plots
+            canvas1.draw()
+            canvas2.draw()
+    
+        # Set up the animation for live plotting
+        ani1 = FuncAnimation(fig1, update_plot, interval=1000)
+        ani2 = FuncAnimation(fig2, update_plot, interval=1000)
+    
+    def ang_start_server():
+        """
+        Starts a server socket to listen for incoming connections and handles data received from clients.
+        """
+        global clientsocket, server_thread, server_running
+        
+        # Ensure previous server is stopped
+        if server_running:
+            ang_stop_server()  # Stop the server if it is still running
+    
+        server_running = True  # Reset the flag
+    
+        def handle_client(clientsocket):
+            """
+            Handles incoming data from the client socket.
+            """
+            global yrawforward, zrawforward, yrawreverse, zrawreverse, xforwarddata, xreversedata, yforwarddata, zforwarddata, zreversedata, yreversedata, plot_mean
+            while True:
+                try:
+                    data = clientsocket.recv(1024)
+                    if not data:
+                        break
+                    data = data.decode('utf-8').split(',')
+                    
+                    forward_fbk = None
+                    forwardx_data = None
+                    forwardy_data = None
+                    reversex_data = None
+                    reversey_data = None
+                    
+                    for item in data:
+                        if "forward:" in item:
+                            forward_fbk = item.split(":")[1].strip()
+                            x = float(forward_fbk)
+                            xforwarddata.append(x)
+                        elif f"forward {col_axis_X}:" in item:
+                            forwardx_data = item.split(":")[1].strip()
+                            y = float(forwardx_data)
+                            yrawforward.append(y)
+                            plot_mean = np.mean(yrawforward)
+                            yforwarddata = [i - plot_mean for i in yrawforward]
+                        elif f"forward {col_axis_Y}:" in item:
+                            forwardy_data = item.split(":")[1].strip()
+                            z = float(forwardy_data)
+                            zrawforward.append(z)
+                            plot_mean = np.mean(zrawforward)
+                            zforwarddata = [i - plot_mean for i in zrawforward]
+                            break
+                        
+                        if "reverse" in item:
+                            reverse_fbk = item.split(":")[1].strip()
+                            x = float(reverse_fbk)
+                            xreversedata.append(x)
+                        elif f"reverse {col_axis_X}" in item:
+                            reversex_data = item.split(":")[1].strip()
+                            y = float(reversex_data)
+                            yrawreverse.append(y)
+                            plot_mean = np.mean(yrawreverse)
+                            yreversedata = [i - plot_mean for i in yrawreverse]
+                        elif f"forward {col_axis_Y}" in item:
+                            reversey_data = item.split(":")[1].strip()
+                            z = float(reversey_data)
+                            zrawreverse.append(z)
+                            plot_mean = np.mean(zrawreverse)
+                            zreversedata = [i - plot_mean for i in zrawreverse]
+                            break
+    
+                except socket.error as e:
+                    print(f"Socket error: {e}")
+                    break
+    
+            clientsocket.close()
+    
+        def server_loop():
+            """
+            Main server loop to accept new client connections.
+            """
+            global server_running
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                #print("Binding server socket to address...")
+                s.bind((socket.gethostname(), 1234))
+                s.listen(5)  # Start listening on the server
+                #print('Server is running and listening for connections...')
+    
+                # Server is ready, set the event
+                server_ready_event.set()
+    
+                while server_running:  # Use flag to control loop
+                    try:
+                        client, address = s.accept()
+                        #print(f"Accepted connection from {address}")
+                        client_thread = threading.Thread(target=handle_client, args=(client,))
+                        client_thread.daemon = True
+                        client_thread.start()
+                    except socket.error as e:
+                        print(f"Server socket error: {e}")
+                        break
+                    except Exception as e:
+                        print(f"Error in server loop: {e}")
+                        break
+            except socket.error as e:
+                print(f"Server startup error: {e}")
+            finally:
+                s.close()
+                print("Server socket closed.")
+        
+        # Start the server in a separate thread
+        server_thread = threading.Thread(target=server_loop, daemon=True)
         server_thread.start()
     
-        # Create animations for the two plots
-        ani1 = FuncAnimation(fig1, lambda frame: update_angular_plot(frame, ax1, ax2, canvas1, canvas2), interval=1000, cache_frame_data=False)
-        ani2 = FuncAnimation(fig2, lambda frame: update_angular_plot(frame, ax1, ax2, canvas1, canvas2), interval=1000, cache_frame_data=False)
+        # Wait a short time to ensure the server is up and running before proceeding
+        time.sleep(1)
+    #print("Server initialization complete.")
     
-    def setup_figure(tab, row, column, ylabel, title, pady):
+    def ang_stop_server():
         """
-        Set up a figure and axes for plotting.
+        Stops the server and closes any open client connections.
         """
-        plot_font = {'family': 'serif', 'weight': 'normal', 'size': 12}
-        title_font = {'family': 'serif', 'weight': 'normal', 'size': 16}
-        
-        fig, ax = plt.subplots()
-        ax.set_facecolor("white")
-        ax.set_xlabel("Position", fontdict=plot_font, color='darkred')
-        ax.set_ylabel(ylabel, fontdict=plot_font, color='darkred')
-        if title:
-            ax.set_title(title, fontdict=title_font)
-        ax.grid(False)
+        global clientsocket, server_thread, server_running
     
-        # Embed figure in Tkinter
-        canvas = FigureCanvasTkAgg(fig, master=tab)
-        canvas.get_tk_widget().grid(row=row, column=column, rowspan=10, columnspan=3, padx=1, pady=pady, sticky='nsew')
+        #print("Attempting to stop the server...")
     
-        return fig, ax, canvas
+        # Check if the server is running
+        if not server_running:
+            #print("Server is already stopped.")
+            return
     
-    def update_angular_plot(frame, ax1, ax2, canvas1, canvas2):
-        """
-        Update plots for angular data.
-        """
-        global xforwarddata, xreversedata, yforwarddata, yreversedata, zforwarddata, zreversedata
+        server_running = False  # Stop the server loop
     
-        # Clear axes for new data
-        ax1.cla()
-        ax2.cla()
+        # Close the client socket if it exists
+        if clientsocket:
+            try:
+                #print("Closing client socket...")
+                clientsocket.shutdown(socket.SHUT_RDWR)
+                clientsocket.close()
+                clientsocket = None
+                #print("Client socket closed.")
+            except Exception as e:
+                print(f"Error closing client socket: {e}")
     
-        # Plot data on both axes
-        plot_data(ax1, xforwarddata, yforwarddata, xreversedata, yreversedata, "Position", col_axis_X)
-        plot_data(ax2, xforwarddata, zforwarddata, xreversedata, zreversedata, "Position", col_axis_Y)
+        # Ensure the server socket is also closed properly
+        if server_thread and server_thread.is_alive():
+            #print("Waiting for server thread to stop...")
+            server_thread.join(timeout=5)  # Wait up to 5 seconds for the thread to close
+            #print("Server thread stopped.")
     
-        # Redraw canvases
-        canvas1.draw()
-        canvas2.draw()
+        # Flush output to avoid lag
+        sys.stdout.flush()
+        #print("Server successfully stopped.")
     
-    def plot_data(ax, xforward, yforward, xreverse, yreverse, xlabel, ylabel):
-        """
-        Plot forward and reverse data on a given axis.
-        """
-        ax.plot(xforward, yforward, color='b', marker='o')
-        ax.plot(xreverse, yreverse, color='r', marker='x')
-        ax.set_xlabel(xlabel, font={'family': 'serif', 'weight': 'normal', 'size': 12})
-        ax.set_ylabel(ylabel, font={'family': 'serif', 'weight': 'normal', 'size': 12})
-        ax.relim()
-        ax.autoscale_view()
-        ax.tick_params(axis='both', which='major', labelsize=10)
-    
-    def run_server():
-        """
-        Run a TCP server to receive data for plotting.
-        """
-        global clientsocket
-        s = socket.socket(socket.AF)
-
-    def angular_test_type_def():
-        global test_type
-        if ang_direction.get() == "uni":
-            test_type = 'Unidirectional'
-        elif ang_direction.get() == "bi":
-            test_type = 'Bidirectional'
-        else:
-            test_type = 'None'
-    
-    def colaxis_def():
-        global col_axis_X, col_axis_Y
-        if ang_colaxisX.get() == 'pitch':
-            col_axis_X = 'Pitch'
-        elif ang_colaxisX.get() == 'yaw':
-            col_axis_X = 'Yaw'
-        elif ang_colaxisX.get() == 'roll':
-            col_axis_X = 'Roll'
-        if ang_colaxisY.get() == 'pitch':
-            col_axis_Y = 'Pitch'
-        elif ang_colaxisY.get() == 'yaw':
-            col_axis_Y = 'Yaw'
-        elif ang_colaxisY.get() == 'roll':
-            col_axis_Y = 'Roll'
-
-    def start_angulartest():
-        global yrawforward,zrawforward,yrawreverse,zrawreverse,xforwarddata,xreversedata,yforwarddata,zforwarddata,zreversedata,yreversedata
-        yrawforward = []
-        zrawforward = []
-        yrawreverse = []
-        zrawreverse = []
-        xforwarddata = []
-        xreversedata = []
-        yforwarddata = []
-        yreversedata = []
-        zforwarddata = []
-        zreversedata = []
-        btn_run_ang.config(state=tk.DISABLED)
-        threading.Thread(target=run_angulartest).start()
-
     def run_angulartest():
+        """
+        Runs the angular test. Handles setup, execution, and resource cleanup.
+        """
         global clientsocket
+    
         # Save user inputs before closing
         user_data = {
             "axis_name": ang_axis.get(),
@@ -1136,14 +1354,26 @@ def UI():
             "comments": ang_comm.get(),
         }
         save_user_inputs(user_data)
+    
         try:
             angulartest()
         finally:
-            gc.collect()                         
-            clientsocket.close()
+            gc.collect()
+            if clientsocket:  # Check if clientsocket is not None before closing
+                clientsocket.close()
             window.after(0, btn_run_ang.config, {'state': tk.NORMAL})
-
+    @profile
     def angulartest():
+        def prompt_user(message):
+            text_logger1.write(message)
+            txt_outStr1.delete(1.0, tk.END)
+            return text_logger1.read_input()
+
+        def clear_text():
+            txt_outStr1.delete(1.0, tk.END)
+        
+        sys.stdout = text_logger1
+        
         axis = str(ang_axis.get())
         start_pos = float(ang_start.get())
         travel = float(ang_travel.get())
@@ -1264,6 +1494,64 @@ def UI():
                 test_type, axis, start_pos, travel, step_size, col_axis_X, col_axis_Y, drive, units, sys_serial, st_serial, oper, stage_type, temp, comments, num_readings, dwell, txt_outStr1, window
             )
             ang.test()
+            
+        ang_stop_server()
+        ang_cleanup_resources()
+    
+    def ang_cleanup_resources(ani_list=None, plot_objects=None, server_socket=None, server_thread=None):
+        """
+        Cleans up resources such as animations, plot objects, threads, and sockets.
+        """
+        global is_plot_running, ani1, ani2, fig1, fig2, ax1, ax2, canvas1, canvas2, clientsocket
+    
+        #print('\nCleaning up resources...')
+        
+        # Stop all animations if provided
+        if ani_list:
+            for ani in ani_list:
+                if ani:
+                    ani.event_source.stop()
+        
+        # Specifically close angular plot objects
+        if fig1:
+            plt.close(fig1)
+            del fig1
+            fig1 = None
+        if fig2:
+            plt.close(fig2)
+            del fig2
+            fig2 = None
+    
+        # If server socket is provided, close it
+        if server_socket:
+            try:
+                server_socket.close()
+                print("Server socket closed.")
+            except Exception as e:
+                print(f"Error closing server socket: {e}")
+        
+        # If server thread is provided and running, stop it
+        if server_thread and server_thread.is_alive():
+            try:
+                server_thread.join(timeout=1)
+                print("Server thread stopped.")
+            except Exception as e:
+                print(f"Error stopping server thread: {e}")
+    
+        # Clean up any global resources
+        is_plot_running = False
+        if 'clientsocket' in globals():
+            if clientsocket:
+                try:
+                    clientsocket.close()
+                    clientsocket = None
+                    print("Client socket closed.")
+                except Exception as e:
+                    print(f"Error closing client socket: {e}")
+    
+        # Perform garbage collection to free up memory
+        gc.collect()
+        #print("Resources cleaned up and garbage collection completed.")
     
     def open_angular_Plot():
         sys.stdout = TextLogger(txt_outStr1)
@@ -1332,6 +1620,30 @@ def UI():
 
         rot_cal.import_data()
     
+    def angular_test_type_def():
+        global test_type
+        if ang_direction.get() == "uni":
+            test_type = 'Unidirectional'
+        elif ang_direction.get() == "bi":
+            test_type = 'Bidirectional'
+        else:
+            test_type = 'None'
+    
+    def colaxis_def():
+        global col_axis_X, col_axis_Y
+        if ang_colaxisX.get() == 'pitch':
+            col_axis_X = 'Pitch'
+        elif ang_colaxisX.get() == 'yaw':
+            col_axis_X = 'Yaw'
+        elif ang_colaxisX.get() == 'roll':
+            col_axis_X = 'Roll'
+        if ang_colaxisY.get() == 'pitch':
+            col_axis_Y = 'Pitch'
+        elif ang_colaxisY.get() == 'yaw':
+            col_axis_Y = 'Yaw'
+        elif ang_colaxisY.get() == 'roll':
+            col_axis_Y = 'Roll'
+    
     # Angular Testing Tab UI Elements
 
     # Test Type Selection
@@ -1381,7 +1693,7 @@ def UI():
     lbl_drive.grid(row=axName_row, column=2, padx=5, pady=5)
     
     drive_options = ['Automation1', 'A3200', 'Other']
-    ang_cont = tk.StringVar(value=ang_controller_value)  # Set default value
+    ang_cont = tk.StringVar(value='')  # Set default value
     
     cont = tk.OptionMenu(tab2, ang_cont, *drive_options)
     cont.grid(row=ll_row, column=2, padx=5, pady=5)
@@ -1391,7 +1703,7 @@ def UI():
     lbl_units.grid(row=axName_row, column=3, padx=5, pady=5)
     
     unit_options = ['mm', 'um', 'in', 'm']
-    ang_units = tk.StringVar(value=ang_units_value)  # Set default value
+    ang_units = tk.StringVar(value='')  # Set default value
     
     un = tk.OptionMenu(tab2, ang_units, *unit_options)
     un.grid(row=ll_row, column=3, padx=5, pady=5)
@@ -1485,71 +1797,62 @@ def UI():
     
     btn_open_ang = tk.Button(master=tab2, text="Open Plot", width=25, height=1, command=open_angular_Plot)
     btn_open_ang.grid(row=run_row, column=2, padx=5, pady=5)
-
-    
-    # Create a Frame to hold the Text widget and the Scrollbar
-    frame1 = tk.Frame(tab2)
-
-    # Create the Text widget
-    txt_outStr1 = tk.Text(master=frame1, state=tk.DISABLED, height=10, fg='white', bg='black')
-
-    # Create the Scrollbar widget
-    outStr_scroll1 = tk.Scrollbar(master=frame1, orient=tk.VERTICAL)
-
-    # Link the Scrollbar to the Text widget
-    txt_outStr1.configure(yscrollcommand=outStr_scroll1.set)
-    outStr_scroll1.config(command=txt_outStr1.yview)
-
-    # Pack the Text widget and the Scrollbar inside the Frame
-    txt_outStr1.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    outStr_scroll1.pack(side=tk.LEFT, fill=tk.Y)
-
-    # Grid the Frame containing the Text widget and the Scrollbar
-    frame1.grid(row=out_row, column=0, columnspan=7, padx=5, pady=5, sticky='nsew')
-
-    # Create the logger object
-    logger1 = TextLogger(txt_outStr1)
-
-    # Configure the grid to expand the Frame
-    tab2.grid_rowconfigure(out_row, weight=1)
-    tab2.grid_columnconfigure(0, weight=1)
     
     def on_closing():
-        # Save user inputs before closing
-        user_data = {
-            "axis_name": ang_axis.get(),
-            "start_position": ang_start.get(),
-            "travel": ang_travel.get(),
-            "step_size": ang_step.get(),
-            "controller": ang_cont.get(),
-            "units": ang_units.get(),
-            "system_serial_number": ang_sys.get(),
-            "stage_serial_number": ang_st.get(),
-            "operator": ang_opName.get(),
-            "part_number": ang_st_type.get(),
-            "temp": ang_temp.get(),
-            "comments": ang_comm.get(),
-        }
+        global window_open
+        window_open = False  # Set the flag to indicate that the window is closing
+        # Determine which tab is currently active
+        current_tab = interface.index(interface.select())  # Replace 'notebook' with your Notebook widget name
         
-        user_data = {
-            "axis_name": rot_axis.get(),
-            "start_position": rot_start.get(),
-            "travel": rot_travel.get(),
-            "step_size": rot_step.get(),
-            "units": rot_units.get(),
-            "stent": rot_diam.get(),
-            "controller": rot_cont.get(),
-            "system_serial_number": rot_sys.get(),
-            "stage_serial_number": rot_st.get(),
-            "operator": rot_opName.get(),
-            "part_number": rot_st_type.get(),
-            "temp": rot_temp.get(),
-            "comments": rot_comm.get(),
-            "col_axis": rot_col.get()
-        }
-        
-        save_user_inputs(user_data)
-        window.destroy()
+        try:
+            # Save user inputs before closing
+            if current_tab == 0:  # First tab
+                user_data = {
+                    "axis_name": rot_axis.get(),
+                    "start_position": rot_start.get(),
+                    "travel": rot_travel.get(),
+                    "step_size": rot_step.get(),
+                    "units": rot_units.get(),
+                    "stent": rot_diam.get(),
+                    "controller": rot_cont.get(),
+                    "system_serial_number": rot_sys.get(),
+                    "stage_serial_number": rot_st.get(),
+                    "operator": rot_opName.get(),
+                    "part_number": rot_st_type.get(),
+                    "temp": rot_temp.get(),
+                    "comments": rot_comm.get(),
+                    "col_axis": rot_col.get()
+                }
+            
+            elif current_tab == 1:  # Second tab
+                user_data = {
+                    "axis_name": ang_axis.get(),
+                    "start_position": ang_start.get(),
+                    "travel": ang_travel.get(),
+                    "step_size": ang_step.get(),
+                    "controller": ang_cont.get(),
+                    "units": ang_units.get(),
+                    "system_serial_number": ang_sys.get(),
+                    "stage_serial_number": ang_st.get(),
+                    "operator": ang_opName.get(),
+                    "part_number": ang_st_type.get(),
+                    "temp": ang_temp.get(),
+                    "comments": ang_comm.get(),
+                }
+            
+            else:
+                # Default action if no tab is selected (should not happen)
+                user_data = {}
+            
+            save_user_inputs(user_data)
+        except Exception as e:
+            print(f"An error occurred: {e}")  # Handle any exceptions
+        try:
+            # Perform any cleanup tasks here
+            window.destroy()  # Close the main window
+            window_open = False
+        except RuntimeError:
+            return
     
     window.protocol("WM_DELETE_WINDOW", on_closing)
     
