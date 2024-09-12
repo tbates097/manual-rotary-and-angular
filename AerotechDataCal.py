@@ -437,7 +437,7 @@ class data_and_cal:
                 for entry in it:
                     if entry.is_dir():  # Check if the entry is a directory
                         # Debugging print to see what folder is being checked
-                        print(f"Checking folder: {entry.path}")
+                        #print(f"Checking folder: {entry.path}")
                         
                         # Check if the search string is in the directory name
                         if search_str in entry.name:
