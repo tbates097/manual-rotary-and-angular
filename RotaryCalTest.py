@@ -104,6 +104,7 @@ class rotary_cal():
     def setup_a1_test(self):
         self.connect_to_server()
         self.send_data('clear', 'clear')
+        
         status_item_configuration = a1.StatusItemConfiguration()
         status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, self.axis)
         status_item_configuration.axis.add(a1.AxisStatusItem.DriveStatus, self.axis)
@@ -258,6 +259,7 @@ class rotary_cal():
                 self.a1_setup_data()
             else:
                 self.bi_a1_test_loop()
+        return
     
     def bi_a1_test_loop(self):
         if self.pos_fbk == self.end_point:
@@ -279,7 +281,8 @@ class rotary_cal():
                 break
         if self.pos_fbk == self.start_pos:
             self.a1_setup_data()
-
+        return
+    
     def test(self):
         self.raw_for_pos = []
         self.raw_rev_pos = []
@@ -809,8 +812,9 @@ class rotary_cal():
         for attempt in range(retry_count):
             try:
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.client_socket.connect((socket.gethostname(), 1234))
-                print("Connected to server successfully.")
+                self.client_socket.connect((socket.gethostname(), 1234))  # Ensure the address and port are correct
+                #print("Connecting to:", socket.gethostname(), "on port 1234")
+                #print("Connected to server successfully.")
                 return self.client_socket
             except socket.error as e:
                 print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
@@ -840,9 +844,9 @@ class rotary_cal():
         self.for_rev.clear()
         self.data_accuracy.clear()
         self.data_rep.clear()
-        print("Data lists cleared to free up memory.")
+        #print("Data lists cleared to free up memory.")
         
     def cleanup_resources(self):
         # ... existing cleanup code ...
         gc.collect()  # Force garbage collection to free up memory
-        print("Garbage collection completed.")
+        #print("Garbage collection completed.")

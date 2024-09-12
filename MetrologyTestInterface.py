@@ -257,7 +257,7 @@ def UI():
         Starts the rotary calibration test. Initializes required data and disables the run button.
         """
         global yrawforward, yrawreverse, xforwarddata, xreversedata, yforwarddata, yreversedata, test_thread
-        
+    
         # Clear data
         yrawforward, yrawreverse = [], []
         xforwarddata, xreversedata = [], []
@@ -266,14 +266,17 @@ def UI():
         # Disable the Run button during the test
         btn_run_rot.config(state=tk.DISABLED)
         
-        # Start the server first
         start_server()
-        
-        # Start the plot thread
-        start_plot_thread()
-        
+    
+        # Ensure the plot is initialized only once
+        global is_plot_running
+        if not is_plot_running:
+            is_plot_running = True
+            # Start the plot in the main thread
+            rotary_live_plot()
+            
         # Check server readiness without blocking the GUI
-        check_server_ready()
+        window.after(100, check_server_ready)
     
     def check_server_ready():
         """
@@ -310,71 +313,81 @@ def UI():
         """
         Function to handle live plotting. Sets up the plot, initializes the animation, and manages updates from a queue.
         """
-        global ani, forward_line, reverse_line, canvas, fig
-        
+        global ani, forward_line, reverse_line, canvas, fig, ax
+    
+        # Debug: Log plot initialization
+        #print("Initializing live plot...")
+    
         # Define font settings
         label_font = {'family': 'serif', 'weight': 'normal', 'size': 14}
         title_font = {'family': 'serif', 'weight': 'bold', 'size': 16}
         tick_font = {'size': 12, 'weight': 'normal'}
         label_color = 'darkred'  # Define color separately
-        
+    
         # Create a new figure and axis for the plot
         fig, ax = plt.subplots()
         ax.set_facecolor("white")
         ax.set_xlabel("Position", fontdict=label_font, color=label_color)
         ax.set_ylabel("Accuracy", fontdict=label_font, color=label_color)
         ax.set_title("Live Plot of Position vs Accuracy", fontdict=title_font)
-        
+    
         # Initialize the line objects for forward and reverse data
         forward_line, = ax.plot([], [], 'b-o', label='Forward')
         reverse_line, = ax.plot([], [], 'r-x', label='Reverse')
-        
+    
         # Set font size for tick labels
         ax.tick_params(axis='both', which='major', labelsize=tick_font['size'])
-        
+    
         # Create a new canvas for the plot and add it to the Tkinter widget
         canvas = FigureCanvasTkAgg(fig, master=tab1)
         canvas.get_tk_widget().grid(row=0, column=4, rowspan=21, columnspan=3, padx=1, pady=(13, 0), sticky='nsew')
         ax.grid(False)
-        
+    
         # Add legend
         ax.legend(loc='upper right', prop={'size': 10})
-        
+    
         def update_plot(frame):
             """
             Update function for the animation. Fetches data from the queues and updates the plot.
             """
+            # Debug: Log update calls
+            #print("Updating plot...")
+    
             # Get forward data from the queue
             if not forward_queue.empty():
                 xforward, yforward = forward_queue.get()
                 forward_line.set_data(xforward, yforward)  # Update line data
-            
+    
             # Get reverse data from the queue
             if not reverse_queue.empty():
                 xreverse, yreverse = reverse_queue.get()
                 reverse_line.set_data(xreverse, yreverse)  # Update line data
-            
+    
             # Set plot limits and redraw
             ax.relim()
             ax.autoscale_view()
-            canvas.draw()
-        
-        # Initialize the animation
+            canvas.draw()  # Ensure the canvas is updated after each frame update
+    
+        # Initialize the animation and keep it in the global scope
         ani = FuncAnimation(fig, update_plot, interval=100)
-        
+        #print("Animation initialized.")
+    
         def on_close(event):
             """
             Cleanup function to run when closing the plot.
             """
             global is_plot_running, ani
+            #print("Plot window closed, cleaning up...")
             if ani is not None:  # Check if ani is initialized
                 ani.event_source.stop()
             plt.close(fig)
             is_plot_running = False
             stop_server()  # Stop the server when the plot is closed
             cleanup_resources()  # Cleanup resources
-        
+    
+        # Connect the close event after creating the plot
         fig.canvas.mpl_connect('close_event', on_close)
+        #print("Plot ready and event handler attached.")
     
     def start_server():
         """
@@ -392,21 +405,24 @@ def UI():
             """
             Handles incoming data from the client socket and categorizes it into forward or reverse data.
             """
+            #print("handle_client started...")  # This should print if the function is called
             global yrawforward, yrawreverse, xforwarddata, xreversedata, yforwarddata, yreversedata
             
             while True:
                 try:
                     data = clientsocket.recv(1024)
                     if not data:
+                        print("No data received, breaking out of the loop.")  # Debug statement
                         break
-                    
+                    #print(f"Raw data received: {data}")  # Debug statement
                     data = data.decode('utf-8').split(',')
                     forward_data = None
                     reverse_data = None
-                    
+                    #print("Decoded data received:", data)
                     # Extract and categorize data as forward or reverse
                     for item in data:
                         if "forward_fbk" in item:
+                            #print(f"Forward data received: {item}")  # Add this print
                             forward_fbk = item.split(":")[1].strip()
                             x = float(forward_fbk)
                             xforwarddata.append(x)
@@ -419,7 +435,7 @@ def UI():
     
                             # Put forward data in the forward queue
                             forward_queue.put((xforwarddata.copy(), yforwarddata.copy()))  # Use .copy() to keep the current state
-    
+                            #print("Forward queue updated with:", xforwarddata, yforwarddata)
                         elif "reverse_fbk" in item:
                             reverse_fbk = item.split(":")[1].strip()
                             x = float(reverse_fbk)
@@ -460,21 +476,24 @@ def UI():
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                #print("Binding server socket to address...")
+                #print("Binding server socket to address...")  # Debug statement
                 s.bind((socket.gethostname(), 1234))
+                #print("Connecting to:", socket.gethostname(), "on port 1234")
                 s.listen(5)  # Start listening on the server
-                #print('Server is running and listening for connections...')
-    
+                #print('Server is running and listening for connections...')  # Debug statement
+        
                 # Server is ready, set the event
                 server_ready_event.set()
-    
+        
                 while server_running:  # Use flag to control loop
                     try:
+                        #print("Waiting for a client to connect...")  # Debug statement
                         client, address = s.accept()
-                        #print(f"Accepted connection from {address}")
+                        #print(f"Accepted connection from {address}")  # Ensure this line prints when a client connects
                         client_thread = threading.Thread(target=handle_client, args=(client,))
                         client_thread.daemon = True
                         client_thread.start()
+                        #print('handle_client Called')  # This should print if the client is connected
                     except socket.error as e:
                         print(f"Server socket error: {e}")
                         break
@@ -712,7 +731,7 @@ def UI():
         """
         Cleans up resources such as threads, connections, and resets global states.
         """
-        global plot_thread, is_plot_running, ani, canvas, fig
+        global plot_thread, test_thread, server_thread, is_plot_running, ani, canvas, fig
         is_plot_running = False
         
         if ani:
@@ -1044,25 +1063,29 @@ def UI():
         Initializes required data for the angular test and disables the run button.
         """
         global yrawforward, zrawforward, yrawreverse, zrawreverse, xforwarddata, xreversedata, yforwarddata, zforwarddata, zreversedata, yreversedata
-        
+    
         # Clear data
         yrawforward, zrawforward = [], []
         yrawreverse, zrawreverse = [], []
         xforwarddata, xreversedata = [], []
         yforwarddata, yreversedata = [], []
         zforwarddata, zreversedata = [], []
-        
+    
         # Disable the Run button during the test
         btn_run_ang.config(state=tk.DISABLED)
-        
+    
         # Start the server first
         ang_start_server()
-        
-        # Start the plot thread
-        ang_start_plot_thread()
-        
+    
+        # Ensure the plot is initialized only once
+        global is_plot_running
+        if not is_plot_running:
+            is_plot_running = True
+            # Start the plot in the main thread
+            angular_live_plot()
+    
         # Check server readiness without blocking the GUI
-        ang_check_server_ready()
+        window.after(100, ang_check_server_ready)
     
     def ang_check_server_ready():
         """
@@ -1084,39 +1107,19 @@ def UI():
         test_thread = threading.Thread(target=run_angulartest, daemon=True)
         test_thread.start()
     
-    def ang_start_plot_thread():
-        """
-        Starts a thread for handling live plot updates. Ensures that only one plot thread is running at a time.
-        """
-        global plot_thread, is_plot_running
-        if not is_plot_running:
-            is_plot_running = True
-            plot_thread = threading.Thread(target=angular_live_plot, daemon=True)
-            plot_thread.start()
-    
-    def angular_live_plot(retry_count=5, delay=1):
+    def angular_live_plot():
         """
         Function to handle live plotting for angular errors. Sets up plots for forward and reverse data.
         """
-        # Ensure retry_count is an integer
-        if not isinstance(retry_count, int):
-            raise TypeError("retry_count must be an integer")
-    
         global xforwarddata, xreversedata, yforwarddata, yreversedata, col_axis_X, col_axis_Y
-        global fig1, ax1, fig2, ax2, plot_mean, ani1, ani2, canvas1, canvas2
+        global fig1, ax1, fig2, ax2, ani1, ani2, canvas1, canvas2
     
-        # Initialize data variables if they aren't already
-        xforwarddata = xforwarddata if xforwarddata else []
-        xreversedata = xreversedata if xreversedata else []
-        yforwarddata = yforwarddata if yforwarddata else []
-        yreversedata = yreversedata if yreversedata else []
-        
         # Define font settings
         label_font = {'family': 'serif', 'weight': 'normal', 'size': 12}
         title_font = {'family': 'serif', 'weight': 'bold', 'size': 14}
         tick_font = {'size': 12, 'weight': 'normal'}
         label_color = 'darkred'  # Define color separately
-        
+    
         # Create a Figure and Axes for the first plot
         fig1, ax1 = plt.subplots()
         ax1.set_facecolor("white")
@@ -1134,11 +1137,7 @@ def UI():
         ax2.set_xlabel("Position", fontdict=label_font, color=label_color)
         ax2.set_ylabel(f"{col_axis_Y}", fontdict=label_font, color=label_color)
         ax2.set_title("Angular Errors", fontdict=title_font)
-        
-        # Set the font size for the tick labels
-        ax1.tick_params(axis='both', which='major', labelsize=tick_font['size'])
-        ax2.tick_params(axis='both', which='major', labelsize=tick_font['size'])
-        
+    
         canvas2 = FigureCanvasTkAgg(fig2, master=tab2)
         canvas2.get_tk_widget().grid(row=11, column=4, rowspan=10, columnspan=3, padx=1, pady=(7, 0), sticky='nsew')
         ax2.grid(False)
@@ -1147,8 +1146,6 @@ def UI():
             """
             Update function for the animation. Clears and redraws the plot with new data.
             """
-            global xforwarddata, xreversedata, yforwarddata, yreversedata
-    
             # Clear the current plots
             ax1.cla()
             ax2.cla()
@@ -1180,12 +1177,33 @@ def UI():
         ani1 = FuncAnimation(fig1, update_plot, interval=1000)
         ani2 = FuncAnimation(fig2, update_plot, interval=1000)
     
+        def on_close(event):
+            """
+            Cleanup function to run when closing the plot.
+            """
+            global is_plot_running, ani1, ani2
+            print("Plot window closed, cleaning up...")
+            if ani1 is not None:
+                ani1.event_source.stop()
+            if ani2 is not None:
+                ani2.event_source.stop()
+            plt.close(fig1)
+            plt.close(fig2)
+            is_plot_running = False
+            ang_stop_server()  # Stop the server when the plot is closed
+            cleanup_resources()  # Cleanup resources
+    
+        # Connect the close event after creating the plot
+        fig1.canvas.mpl_connect('close_event', on_close)
+        fig2.canvas.mpl_connect('close_event', on_close)
+        #print("Plot ready and event handler attached.")
+    
     def ang_start_server():
         """
         Starts a server socket to listen for incoming connections and handles data received from clients.
         """
         global clientsocket, server_thread, server_running
-        
+    
         # Ensure previous server is stopped
         if server_running:
             ang_stop_server()  # Stop the server if it is still running
@@ -1261,18 +1279,13 @@ def UI():
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                #print("Binding server socket to address...")
                 s.bind((socket.gethostname(), 1234))
                 s.listen(5)  # Start listening on the server
-                #print('Server is running and listening for connections...')
-    
-                # Server is ready, set the event
                 server_ready_event.set()
     
                 while server_running:  # Use flag to control loop
                     try:
                         client, address = s.accept()
-                        #print(f"Accepted connection from {address}")
                         client_thread = threading.Thread(target=handle_client, args=(client,))
                         client_thread.daemon = True
                         client_thread.start()
@@ -1287,14 +1300,13 @@ def UI():
             finally:
                 s.close()
                 print("Server socket closed.")
-        
+    
         # Start the server in a separate thread
         server_thread = threading.Thread(target=server_loop, daemon=True)
         server_thread.start()
     
         # Wait a short time to ensure the server is up and running before proceeding
         time.sleep(1)
-    #print("Server initialization complete.")
     
     def ang_stop_server():
         """
@@ -1302,11 +1314,8 @@ def UI():
         """
         global clientsocket, server_thread, server_running
     
-        #print("Attempting to stop the server...")
-    
         # Check if the server is running
         if not server_running:
-            #print("Server is already stopped.")
             return
     
         server_running = False  # Stop the server loop
@@ -1314,23 +1323,18 @@ def UI():
         # Close the client socket if it exists
         if clientsocket:
             try:
-                #print("Closing client socket...")
                 clientsocket.shutdown(socket.SHUT_RDWR)
                 clientsocket.close()
                 clientsocket = None
-                #print("Client socket closed.")
             except Exception as e:
                 print(f"Error closing client socket: {e}")
     
         # Ensure the server socket is also closed properly
         if server_thread and server_thread.is_alive():
-            #print("Waiting for server thread to stop...")
             server_thread.join(timeout=5)  # Wait up to 5 seconds for the thread to close
-            #print("Server thread stopped.")
     
         # Flush output to avoid lag
         sys.stdout.flush()
-        #print("Server successfully stopped.")
     
     def run_angulartest():
         """
@@ -1362,7 +1366,7 @@ def UI():
             if clientsocket:  # Check if clientsocket is not None before closing
                 clientsocket.close()
             window.after(0, btn_run_ang.config, {'state': tk.NORMAL})
-    @profile
+
     def angulartest():
         def prompt_user(message):
             text_logger1.write(message)
@@ -1390,8 +1394,6 @@ def UI():
         comments = str(ang_comm.get())
 
         global ang, controller
-        
-        threading.Thread(target=angular_live_plot).start()
         
         if drive == 'Automation1':
             try:

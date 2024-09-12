@@ -439,7 +439,7 @@ class angular:
             try:
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.connect((socket.gethostname(), 1234))
-                print("Connected to server successfully.")
+                #print("Connected to server successfully.")
                 return self.client_socket
             except socket.error as e:
                 print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
