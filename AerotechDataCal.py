@@ -9,6 +9,8 @@ from tkinter import messagebox, font
 import automation1 as a1
 import math
 import os
+from collections import deque
+from Logger import TextLogger
 
 class data_and_cal:
     """
@@ -431,31 +433,37 @@ class data_and_cal:
 
     def find_folder(self, base_path, search_str):
         try:
-            # Iterate over all entries in the given directory
-            with os.scandir(base_path) as it:
-                for entry in it:
-                    if entry.is_dir():  # Check if the entry is a directory
-                        # Debugging print to see what folder is being checked
-                        #print(f"Checking folder: {entry.path}")
-                        
-                        # Check if the search string is in the directory name
-                        if search_str in entry.name:
-                            return entry.path
-                        
-                        # Recursively search in subdirectories
-                        subfolder_result = self.find_folder(entry.path, search_str)  # Recursive call
-                        if subfolder_result:
-                            return subfolder_result  # Return if found in subdirectory
+            # Use a queue for breadth-first search
+            queue = deque([base_path])
+            
+            while queue:
+                current_path = queue.popleft()
+                
+                try:
+                    with os.scandir(current_path) as it:
+                        for entry in it:
+                            if entry.is_dir():  # Check if the entry is a directory
+                                # Debugging print to see what folder is being checked
+                                # print(f"Checking folder: {entry.path}")
+                                
+                                # Check if the search string is in the directory name
+                                if search_str in entry.name:
+                                    return entry.path
+                                
+                                # Add subdirectory to the queue for later checking
+                                queue.append(entry.path)
+                
+                except PermissionError as e:
+                    print(f"PermissionError accessing {current_path}: {e}")
+                    continue  # Skip folders that cannot be accessed
+                except FileNotFoundError as e:
+                    print(f"FileNotFoundError: {e}")
+                    continue  # Skip if a directory is not found
+                except Exception as e:
+                    print(f"An unexpected error occurred at {current_path}: {e}")
+                    continue  # Catch any other unexpected errors
     
-        # Handle exceptions such as permission issues or missing directories
-        except PermissionError as e:
-            print(f"PermissionError accessing {base_path}: {e}")
-            pass  # Skip folders that cannot be accessed
-        except FileNotFoundError as e:
-            print(f"FileNotFoundError: {e}")
-            pass  # Skip if a directory is not found (rare, but possible)
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            pass  # Catch any other unexpected errors
-        
+            print(f"An error occurred in the main function: {e}")
+    
         return None  # Return None if the folder isn't found
