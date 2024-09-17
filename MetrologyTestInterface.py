@@ -23,7 +23,6 @@ import gc
 import time
 import json
 import queue
-from memory_profiler import profile
 
 yrawforward = []
 zrawforward = []
@@ -727,7 +726,6 @@ def UI():
         
         return
     def cleanup_resources(rot_cal=None):
-        #print('\nCleanup Resources')
         """
         Cleans up resources such as threads, connections, and resets global states.
         """
@@ -737,9 +735,20 @@ def UI():
         if ani:
             ani.event_source.stop()
             ani = None
-        
+    
+        if plot_thread and plot_thread.is_alive():
+            plot_thread.join(timeout=1)
         plot_thread = None
+    
+        if test_thread and test_thread.is_alive():
+            test_thread.join(timeout=1)
+        test_thread = None
         
+        if server_thread and server_thread.is_alive():
+            server_thread.join(timeout=1)
+        server_thread = None
+    
+        # Close client socket if it exists
         if clientsocket:
             clientsocket.close()
         
@@ -748,7 +757,7 @@ def UI():
             del rot_cal
         
         gc.collect()
-        #print("Resources cleaned up and garbage collection completed.")
+        print("Resources cleaned up and garbage collection completed.")
     
     def import_data_rotary():
         global rot_cal
@@ -1851,6 +1860,7 @@ def UI():
             print(f"An error occurred: {e}")  # Handle any exceptions
         try:
             # Perform any cleanup tasks here
+            cleanup_resources()
             window.destroy()  # Close the main window
             window_open = False
         except RuntimeError:
