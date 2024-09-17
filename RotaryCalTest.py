@@ -54,7 +54,9 @@ class rotary_cal():
         self.window.withdraw()
         
         self.collecting = False
-
+        self.connect_to_server()
+        time.sleep(500)
+        
     def __del__(self):
         sys.stdout = sys.__stdout__    
 
@@ -299,19 +301,24 @@ class rotary_cal():
         
         global col_reading
         col_reading = collimator(self.num_readings, self.dwell, self.text_widget)
-        align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready. Hit 'Esc' key to cancel")
-        if align == ">":
-            self.clear_text()
-            time.sleep(2)
-        else:
-            return
-        step_prompt = self.prompt_user(f'Copy step size for Motion Composer then hit Enter: {self.step_size}')
-        if step_prompt == '>':
-            self.clear_text()
-            self.uni_test_loop()
-        
+        #align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready. Hit 'Esc' key to cancel")
+# =============================================================================
+#         if align == ">":
+#             self.clear_text()
+#             time.sleep(2)
+#             if self.units != 'deg':
+#                 step_prompt = self.prompt_user(f'Copy step size for Motion Composer then hit Enter: {self.step_size}')
+#                 if step_prompt == '>':
+#                     self.clear_text()
+#                     self.uni_test_loop()
+#             else:
+#                 self.uni_test_loop()
+#         else:
+#             return
+# =============================================================================
+        self.uni_test_loop()
+ 
     def uni_test_loop(self):
-        self.connect_to_server()
         self.num_points = (self.travel / self.step_size) 
         self.bi_num_points = ((self.travel / self.step_size) * 2)
         self.test_points = 0
@@ -328,16 +335,26 @@ class rotary_cal():
                 self.move_to_next_point()
             elif response == "Cancel":
                 tk.messagebox.showerror('Abort', 'Test Stopped')
+                cancel='yes'
                 break
-
-        if self.test_type == "Unidirectional":
-            self.setup_data()
-        else:
-            self.test_distance -= self.step_size
-            self.test_points -= 1
-            self.bi_test_loop()
+        try:
+            if cancel != 'yes':
+                if self.test_type == "Unidirectional":
+                    self.setup_data()
+                else:
+                    self.test_distance -= self.step_size
+                    self.test_points -= 1
+                    self.bi_test_loop()
+            else:
+                return
+        except UnboundLocalError:
+            if self.test_type == "Unidirectional":
+                self.setup_data()
+            else:
+                self.test_distance -= self.step_size
+                self.test_points -= 1
+                self.bi_test_loop()
             
-                    
     def bi_test_loop(self):
         if self.test_points == self.num_points:
             messagebox.showinfo('Over Travel', 'Execute an over-travel move and press OK')
@@ -352,10 +369,16 @@ class rotary_cal():
                 self.move_to_previous_point()
             elif response == "Cancel":
                 tk.messagebox.showerror('Abort', 'Test Stopped')
+                cancel='yes'
                 break
-
-        self.setup_data()
-
+        try:
+            if cancel != 'yes':
+                self.setup_data()
+            else:
+                return
+        except UnboundLocalError:
+            self.setup_data()
+            
     def a1_setup_data(self):
         self.convert_data_to_float()
         self.adjust_data_direction()
@@ -805,6 +828,7 @@ class rotary_cal():
         Attempts to connect to the server with retries.
         """
         # Make sure retry_count is an integer
+        #print('Connecting to server - RotaryCalTest')
         if not isinstance(retry_count, int):
             raise TypeError("retry_count must be an integer")
     
@@ -812,8 +836,8 @@ class rotary_cal():
             try:
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.client_socket.connect((socket.gethostname(), 1234))  # Ensure the address and port are correct
-                #print("Connecting to:", socket.gethostname(), "on port 1234")
-                #print("Connected to server successfully.")
+                #print("Connecting to:", socket.gethostname(), "on port 1234 - RotaryCalTest")
+                #print("Connected to server successfully. - RotaryCalTest")
                 return self.client_socket
             except socket.error as e:
                 print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")

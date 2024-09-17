@@ -475,20 +475,20 @@ def UI():
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                #print("Binding server socket to address...")  # Debug statement
+                #print("Binding server socket to address... - Metrology Test Interface")  # Debug statement
                 s.bind((socket.gethostname(), 1234))
-                #print("Connecting to:", socket.gethostname(), "on port 1234")
+                #print("Connecting to:", socket.gethostname(), "on port 1234 - Metrology Test Interface")
                 s.listen(5)  # Start listening on the server
-                #print('Server is running and listening for connections...')  # Debug statement
+                #print('Server is running and listening for connections... - Metrology Test Interface')  # Debug statement
         
                 # Server is ready, set the event
                 server_ready_event.set()
         
                 while server_running:  # Use flag to control loop
                     try:
-                        #print("Waiting for a client to connect...")  # Debug statement
+                        #print("Waiting for a client to connect... - Metrology Test Interface")  # Debug statement
                         client, address = s.accept()
-                        #print(f"Accepted connection from {address}")  # Ensure this line prints when a client connects
+                        #print(f"Accepted connection from {address} - Metrology Test Interface")  # Ensure this line prints when a client connects
                         client_thread = threading.Thread(target=handle_client, args=(client,))
                         client_thread.daemon = True
                         client_thread.start()
@@ -741,7 +741,10 @@ def UI():
         plot_thread = None
     
         if test_thread and test_thread.is_alive():
-            test_thread.join(timeout=1)
+            try:
+                test_thread.join(timeout=1)
+            except RuntimeError:
+                pass
         test_thread = None
         
         if server_thread and server_thread.is_alive():
@@ -757,7 +760,7 @@ def UI():
             del rot_cal
         
         gc.collect()
-        print("Resources cleaned up and garbage collection completed.")
+        #print("Resources cleaned up and garbage collection completed.")
     
     def import_data_rotary():
         global rot_cal
