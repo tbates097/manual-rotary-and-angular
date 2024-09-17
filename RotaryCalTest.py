@@ -21,7 +21,6 @@ from AerotechPDF import aerotech_PDF
 from Logger import TextLogger
 import socket
 import gc
-from memory_profiler import profile
 
 
 class rotary_cal():

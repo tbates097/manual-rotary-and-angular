@@ -9,7 +9,6 @@ from tkinter import messagebox, font
 import automation1 as a1
 import math
 import os
-from memory_profiler import profile
 
 class data_and_cal:
     """

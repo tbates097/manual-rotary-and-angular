@@ -14,7 +14,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from matplotlib import font_manager as fm
-from memory_profiler import profile
 import gc
 
 class aerotech_PDF():
