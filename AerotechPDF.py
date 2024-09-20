@@ -45,7 +45,7 @@ class aerotech_PDF():
         self.reverse_X = kwargs.get('reverse_X', None)
         self.reverse_Y = kwargs.get('reverse_Y', None)
         self.rev_pos_fbk = kwargs.get('rev_pos_fbk', None)
-        self.for_rev = kwargs.get('for_rev', None)
+        #self.for_rev = kwargs.get('for_rev', None)
         self.pk_pk = kwargs.get('pk_pk', None)
         self.pk_pk_X = kwargs.get('pk_pk_X', None)
         self.pk_pk_Y = kwargs.get('pk_pk_Y', None)

@@ -54,8 +54,6 @@ class rotary_cal():
         self.window.withdraw()
         
         self.collecting = False
-        self.connect_to_server()
-        time.sleep(500)
         
     def __del__(self):
         sys.stdout = sys.__stdout__    
@@ -103,9 +101,6 @@ class rotary_cal():
             self.setup_a1_test()
        
     def setup_a1_test(self):
-        self.connect_to_server()
-        self.send_data('clear', 'clear')
-        
         status_item_configuration = a1.StatusItemConfiguration()
         status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, self.axis)
         status_item_configuration.axis.add(a1.AxisStatusItem.DriveStatus, self.axis)
@@ -137,6 +132,7 @@ class rotary_cal():
         self.controller.runtime.commands.motion.moveabsolute([self.axis], [0], [self.speed])
         time.sleep(abs(self.pos_fbk / self.speed))
         
+
         align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready")
         if align == ">":
             self.clear_text()
@@ -144,6 +140,7 @@ class rotary_cal():
             self.dir_sense()
         # Clean up temporary objects
         del status_item_configuration, drive_status, axis_status
+
         
     def setup_a1_verification(self):
         self.raw_for_pos, self.raw_rev_pos = [], []
@@ -226,6 +223,9 @@ class rotary_cal():
         self.uni_a1_test_loop()
     
     def uni_a1_test_loop(self):
+        self.connect_to_server()
+        self.send_data('clear', 'clear')
+        time.sleep(5)
         pos_fbk = self.update_position_feedback()
         if pos_fbk != self.start_pos:
             self.controller.runtime.commands.motion.moveabsolute([self.axis], [self.start_pos], [self.speed])
@@ -389,8 +389,16 @@ class rotary_cal():
         self.post_process()
 
     def convert_data_to_float(self):
-        self.raw_forward = [float(i) for i in self.raw_forward]
-        self.raw_reverse = [float(i) for i in self.raw_reverse]
+        try:
+            self.raw_forward = [float(i) for i in self.raw_forward]
+            self.raw_reverse = [float(i) for i in self.raw_reverse]
+        except:
+            pass
+        try:
+            self.forward = [float(i) for i in self.forward]
+            self.reverse = [float(i) for i in self.reverse]
+        except AttributeError:
+            print("List not present")
 
     def adjust_data_direction(self):
         if self.col_axis == 'X':
@@ -521,7 +529,7 @@ class rotary_cal():
         if self.test_type == 'Bidirectional':
             bi_pdf_args = {
                 **common_args, 'rev_pos_fbk': self.rev_pos_fbk, 'forward': self.forward, 'reverse': self.reverse, 
-                'for_rev': self.for_rev, 'pk_pk': self.pk_pk, 'rep': self.rep, 'dia': self.dia, 'is_cal': self.is_cal, 
+                'pk_pk': self.pk_pk, 'rep': self.rep, 'dia': self.dia, 'is_cal': self.is_cal, 
                 'data': self.data
             }
             gen_pdf = aerotech_PDF(**bi_pdf_args)
