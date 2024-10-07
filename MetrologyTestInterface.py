@@ -140,7 +140,25 @@ def UI():
     y_cordinate = int((screen_height / 2) - (window_height / 2))
 
     window.geometry("{}x{}+{}+{}".format(window_width, window_height, x_cordinate, y_cordinate))
+    
+    # Create a style object
+    style = ttk.Style()
 
+    # Modify the appearance of the tabs only
+    style.configure("TNotebook.Tab", 
+                    font=('Arial', '12', 'bold'),  # Font style
+                    padding=[10, 4],  # Padding around the text
+                    background="lightgray",  # Background color of the tab
+                    foreground="black",  # Text color
+                    )
+
+    # Change the appearance when the tab is selected
+    style.map("TNotebook.Tab", 
+              background=[("selected", "lightblue")],  # Background color when selected
+              foreground=[("selected", "black")],  # Text color when selected
+              expand=[("selected", [1, 1, 1, 0])]  # Makes selected tab appear slightly larger
+              )
+    
     interface = ttk.Notebook(window)
     interface.pack(fill='both', expand=True)
 
