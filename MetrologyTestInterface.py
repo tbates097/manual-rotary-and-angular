@@ -15,14 +15,18 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.animation import FuncAnimation
 import threading
 import automation1 as a1
-from RotaryCalTest import rotary_cal
-from AngularTest import angular
-from Logger import TextLogger
 import socket
 import gc
 import time
 import json
 import queue
+
+from RotaryCalTest import rotary_cal
+from AngularTest import angular
+
+sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+sys.path.append(r"C:\Users\tbates\Python\shared")
+from Logger import TextLogger
 
 yrawforward = []
 zrawforward = []

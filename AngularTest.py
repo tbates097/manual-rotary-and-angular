@@ -15,12 +15,16 @@ import math
 import numpy as np
 import datetime
 import threading
-from RS232 import collimator
-from AerotechDataCal import data_and_cal
-from AerotechPDF import aerotech_PDF
-from Logger import TextLogger
 import socket
 import gc
+
+from AerotechDataCal import data_and_cal
+from AerotechPDF import aerotech_PDF
+
+sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
+sys.path.append(r"C:\Users\tbates\Python\shared")
+from Logger import TextLogger
+from Serial import serial_com
 
 class angular:
     '''
@@ -63,7 +67,7 @@ class angular:
         self.initialize_test_variables()
 
         global col_reading
-        col_reading = collimator(self.num_readings, self.dwell, self.text_widget)
+        col_reading = serial_com(self.dwell, self.text_widget, num_readings=self.num_readings)
 
         status_item_configuration = a1.StatusItemConfiguration()
         status_item_configuration.axis.add(a1.AxisStatusItem.PositionFeedback, self.axis)
