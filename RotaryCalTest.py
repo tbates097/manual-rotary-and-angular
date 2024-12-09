@@ -303,7 +303,7 @@ class rotary_cal():
             self.convert_units_to_in()
         
         global col_reading
-        col_reading = collimator(self.num_readings, self.dwell, self.text_widget)
+        col_reading = serial_com(self.dwell, self.text_widget, num_readings=self.num_readings)
         #align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready. Hit 'Esc' key to cancel")
 # =============================================================================
 #         if align == ">":
