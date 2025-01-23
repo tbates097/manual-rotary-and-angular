@@ -59,8 +59,13 @@ forward_line = None
 reverse_line = None
 server_running = True  # Add a global flag to control server loop
 
-# JSON file path to store user inputs
-USER_DATA_FILE = os.path.join(os.getcwd(), "user_data.json")
+# Define the application name and user data file path
+APP_NAME = "ManualRotary"
+USER_DATA_DIR = os.path.join(os.getenv('APPDATA'), APP_NAME)
+USER_DATA_FILE = os.path.join(USER_DATA_DIR, "user_data.json")
+
+# Ensure the directory exists
+os.makedirs(USER_DATA_DIR, exist_ok=True)
 
 def save_user_inputs(data):
     """Save user inputs to a JSON file."""
