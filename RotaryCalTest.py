@@ -108,7 +108,8 @@ class rotary_cal():
         self.results = self.controller.runtime.status.get_status_items(status_item_configuration)
 
         self.dir_step = 0.02
-        self.speed = self.controller.runtime.parameters.axes[self.axis].motion.maxjogspeed.value
+        self.max_speed = self.controller.runtime.parameters.axes[self.axis].motion.maxjogspeed.value
+        self.speed = self.max_speed / 2.5
         if self.speed > 30:
             self.speed = 30
 

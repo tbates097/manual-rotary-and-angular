@@ -61,85 +61,77 @@ class aerotech_PDF():
         self.root.withdraw()
     
     def rotary_pdf(self):
-        self.start_path = 'O:/'  # Base path
-        self.sys_serial = str(self.sys_serial)  # Convert serial number to string
-        search_str = self.sys_serial[:6]  # Use the first 6 characters of the serial number
+        # Set up base path and folder for storing PDF
+        self.start_path = 'O:/'
+        self.sys_serial = str(self.sys_serial)
+        search_str = self.sys_serial[:6]
         self.folder_path = self.find_folder(self.start_path, search_str)
-        
-        # This cell of the script will be used to generate a pdf in the AerotechFooter Format
-        #global fig
-    
+
+        # Set up fonts for title and labels
         title_font = fm.FontProperties(family='Times New Roman', size=12, weight='bold')
         label_font = fm.FontProperties(family='Times New Roman', size=10, style='italic')
-        #plt.rcParams.update({'font.size': 10})
-        fig, ax1, ax2, ax3, ax4 = AerotechFormat.makeTemplate()
+
+        # Generate figure and axes using AerotechFormat
+        fig, axes = AerotechFormat.makeTemplate(num_plots=1)
+        ax_logo, ax1, ax3, ax4, ax5 = axes  # Unpack axes
         
-        ax1 = plt.subplot2grid((19, 3),(3,0), rowspan = 8, colspan = 3,)
-        plt.title('Accuracy', fontproperties=title_font)
-    
-        #Accuracy plot
-        plt.ylabel('Accuracy (arcsec)',fontproperties=label_font)
-        plt.xlabel('Position ({})'.format(self.units),fontproperties=label_font)
+        # Accuracy plot (ax1)
+        ax1.set_title('Accuracy', fontproperties=title_font)
+        ax1.set_ylabel('Accuracy (arcsec)', fontproperties=label_font)
+        ax1.set_xlabel(f'Position ({self.units})', fontproperties=label_font)
         if self.test_type == "Bidirectional":
             ax1.plot(self.for_pos_fbk, self.forward, '-b', label='Forward', marker='o')
             ax1.plot(self.for_pos_fbk, self.reverse, '-r', label='Reverse', marker='x')
-            plt.legend(loc='upper right')
+            ax1.legend(loc='upper right')
         else:
             ax1.plot(self.for_pos_fbk, self.forward, '-b', label='Accuracy', marker='o')
-            plt.legend(loc='upper right')
+            ax1.legend(loc='upper right')
 
-        #Results Text Box
+        # Get the size of each axis in inches
+        ax2_width, ax3_height = ax3.get_position().size
+        ax3_width, ax4_height = ax4.get_position().size
+        ax4_width, ax5_height = ax5.get_position().size
+    
+        # Scale the font size based on the axis size
+        font_size_ax3 = max(9, ax3_height * 40)
+        font_size_ax4 = max(9, ax4_height * 40)
+        font_size_ax5 = max(8, ax5_height * 40)
+
+        # Results text box (ax3)
         if self.units == "deg":
             if self.test_type != "Bidirectional":
-                ax2.text(0.02,.8, 'Accuracy: {} arcsec'.format(round(self.pk_pk,3)), color = 'black', size = 8.5)
+                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
             else:
-                ax2.text(0.02,.8, 'Accuracy: {} arcsec'.format(round(self.pk_pk,3)), color = 'black', size = 8.5)
-                ax2.text(0.02,.725, 'Repeat: {} arcsec'.format(round(self.rep,3)), color = 'black', size = 8.5)    
+                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
+                ax3.text(0.02, 0.7, f'Repeat: {round(self.rep, 3)} arcsec', color='black', size=font_size_ax3)
         else:
+            radius = self.dia / 2
+            linear_pk_pk = ((self.pk_pk / 360) * (2 * math.pi * radius)) / (25.4 if self.units != 'mm' else 1)
             if self.test_type != "Bidirectional":
-                if self.units == 'mm':
-                    radius = self.dia / 2
-                    linear_pk_pk = (self.pk_pk / 360) * ((2 * math.pi) * (radius))
-                else:
-                    radius = self.dia / 2
-                    linear_pk_pk = ((self.pk_pk / 360) * ((2 * math.pi) * (radius))) / 25.4
-                #ax2.text(0.02,.725, '          {} {}'.format(round(self.pk_pk,6),self.units), color = 'black', size = 8.5)
-                ax2.text(0.02,.8, 'Accuracy: {} arcsec ({} {})'.format(round(self.pk_pk,3),round(linear_pk_pk,8),self.units), color = 'black', size = 8.5)
+                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
             else:
-                if self.units == 'mm':
-                    radius = self.dia / 2
-                    linear_pk_pk = (self.pk_pk / 360) * ((2 * math.pi) * (radius))
-                    linear_rep = (self.rep / 360) * ((2 * math.pi) * (radius))
-                else:
-                    radius = self.dia / 2
-                    linear_pk_pk = ((self.pk_pk / 360) * ((2 * math.pi) * (radius))) / 25.4
-                    linear_rep = ((self.rep / 360) * ((2 * math.pi) * (radius))) / 25.4
-                #ax2.text(0.02,.725, '          {} {}'.format(str(round(self.pk_pk,6)),self.units), color = 'black', size = 8.5)
-                ax2.text(0.02,.8, 'Accuracy: {} arcsec ({} {})'.format(round(self.pk_pk,3),round(linear_pk_pk,8),self.units), color = 'black', size = 8.5)
-                #ax2.text(0.02,.725, 'Repeatability: {} {}'.format(str(round(self.rep,6)),self.units), color = 'black', size = 8.5)
-                ax2.text(0.02,.725, 'Repeat: {} arcsec ({} {})'.format(round(self.rep,3),round(linear_rep,8),self.units), color = 'black', size = 8.5)
-        #Comments Text Box
-        ax3.text(0.02, .8, 'System Serial Number: {}'.format(str(self.sys_serial) + '-' + str(self.axis)), color = 'black', size = 9)
-        ax3.text(0.02, .725, 'Stage Serial Number: {}'.format(self.st_serial), color = 'black', size = 9)
-        ax3.text(0.02, .65, 'Stage: {}'.format(self.stage_type),color='black',size=9)
-        ax3.text(0.02, .575, 'Date: {} {}'.format(self.current_date,self.current_time), color = 'black', size= 9)
-        ax3.text(0.02, .500, 'Operator: {}'.format(self.oper), color = 'black', size= 9)
-        ax3.text(0.02, .275, 'Comments: {}'.format(self.comments), color = 'black', size = 10, verticalalignment = 'top')
+                linear_rep = ((self.rep / 360) * (2 * math.pi * radius)) / (25.4 if self.units != 'mm' else 1)
+                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
+                ax3.text(0.02, 0.7, f'Repeat: {round(self.rep, 3)} arcsec ({round(linear_rep, 8)} {self.units})', color='black', size=8.5)
 
-        if self.is_cal:
-            pdf_cal = 'Calibrated'
-        else:
-            pdf_cal = 'Uncalibrated'
+        # System Information text box (ax4)
+        ax4.text(0.02, 0.8, f'System Serial Number: {self.sys_serial}-{self.axis}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.7, f'Stage Serial Number: {self.st_serial}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.6, f'Stage: {self.stage_type}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.5, f'Date: {self.current_date} {self.current_time}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.4, f'Operator: {self.oper}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.2, f'Comments: {self.comments}', color='black', size=font_size_ax5, verticalalignment='top')
 
-        #Test Conditions Text Box
+        # Test Conditions text box (ax5)
         degree_sign = u'\N{DEGREE SIGN}'
-        ax4.text(.02, .8, 'Temperature: {} {}C'.format(self.temp, degree_sign), color = 'black', size = 9)
-        ax4.text(.02, .725, 'Calibration Status: {}'.format(pdf_cal),color='black',size=9)
-        ax4.text(.02, .65, 'Step Size: {} {}'.format(round(self.step_size,6),self.units), color = 'black', size = 9)
-        ax4.text(.02, .575, 'Travel: {} {}'.format(round(self.travel,6), self.units), color = 'black', size = 9)
-        ax4.text(.02, .500, 'Start Position: {} {}'.format(self.start_pos, self.units), color = 'black', size = 9)
+        pdf_cal = 'Calibrated' if self.is_cal else 'Uncalibrated'
+        ax5.text(0.02, 0.8, f'Temperature: {self.temp} {degree_sign}C', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.7, f'Calibration Status: {pdf_cal}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.6, f'Step Size: {round(self.step_size, 6)} {self.units}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.5, f'Travel: {round(self.travel, 6)} {self.units}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.4, f'Start Position: {self.start_pos} {self.units}', color='black', size=font_size_ax5)
         if self.units != 'deg':
-            ax4.text(.02, 0.425, 'Working Diameter: {} mm'.format(self.dia), color = 'black', size = 9)
+            ax5.text(0.02, 0.3, f'Working Diameter: {self.dia} mm', color='black', size=font_size_ax5)
 
         if self.is_cal:
             output_file = str(self.sys_serial + '-' + self.axis + "_Verification.pdf")
@@ -152,7 +144,7 @@ class aerotech_PDF():
         # Save the figure and clean up
         fig.savefig(save_file, format='pdf')
         plt.close(fig)  # Close the figure to free up memory
-        del fig, ax1, ax2, ax3, ax4  # Delete references to the figure and axes
+        del fig, ax1, ax3, ax4, ax5  # Delete references to the figure and axes
         gc.collect()  # Explicitly call garbage collection to free memory
         
         self.rotary_plotly()

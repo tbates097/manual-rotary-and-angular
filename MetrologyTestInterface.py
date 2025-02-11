@@ -389,7 +389,7 @@ def UI():
             ax.relim()
             ax.autoscale_view()
             canvas.draw()  # Ensure the canvas is updated after each frame update
-    
+        
         # Initialize the animation and keep it in the global scope
         ani = FuncAnimation(fig, update_plot, interval=100)
         #print("Animation initialized.")
