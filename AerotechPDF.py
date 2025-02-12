@@ -6,21 +6,17 @@ Created on Tue May 14 12:31:52 2024
 """
 
 import os
-import sys
 import numpy as np
 import tkinter as tk
 import math
+from AerotechFormat import AerotechFormat
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from matplotlib import font_manager as fm
 from collections import deque
-import gc
-
-sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
-from AerotechFormat import AerotechFormat
+import gc
 
 class aerotech_PDF():
     def __init__(self, test_type, sys_serial, st_serial, current_date, current_time, axis, stage_type, drive, step_size, for_pos_fbk, temp, units, comments, travel, start_pos, oper, **kwargs):
