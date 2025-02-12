@@ -18,7 +18,7 @@ from collections import deque
 import gc
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from AerotechFormat import AerotechFormat
 

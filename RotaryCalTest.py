@@ -22,9 +22,9 @@ from AerotechDataCal import data_and_cal
 from AerotechPDF import aerotech_PDF
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
-from Serial import serial_com
+from SerialHandler import serial_com
 
 class rotary_cal():
     def __init__(self, axis, num_readings, dwell, step_size, travel, units, dia, test_type, sys_serial, st_serial, comments, temp, start_pos, drive, stage_type, oper, text_widget, window, **kwargs):
@@ -401,8 +401,8 @@ class rotary_cal():
         try:
             self.forward = [float(i) for i in self.forward]
             self.reverse = [float(i) for i in self.reverse]
-        except AttributeError:
-            print("List not present")
+        except:
+            pass
 
     def adjust_data_direction(self):
         if self.col_axis == 'X':

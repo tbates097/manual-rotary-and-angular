@@ -22,9 +22,9 @@ from AerotechDataCal import data_and_cal
 from AerotechPDF import aerotech_PDF
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
-sys.path.append(r"C:\Users\tbates\Python\shared")
+#sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
-from Serial import serial_com
+from SerialHandler import serial_com
 
 class angular:
     '''
