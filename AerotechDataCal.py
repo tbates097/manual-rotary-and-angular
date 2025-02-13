@@ -257,10 +257,30 @@ class data_and_cal:
             return [-x for x in self.forward_data]
 
     def create_hex_file(self, cal_data):
-        with open(self.file_name, 'w') as f:
-            f.write(f'[{self.axis}CAL]\n//Step Size in deg, correction in arc-sec\nStepSize={self.step_size}\nCorrection = {" ".join(map(str, cal_data))}')
-        messagebox.showinfo('Verify Cal File', 'Copy contents of file into "...EngOnly/Hexapod/SO-1-1-kpMeasurements.txt"')
-
+        # Read the original contents
+        contents = self.controller.files.read_text(f'{self.sys_serial}-KPMeasurements.txt')
+        
+        # Create the new content block
+        new_block = f'[{self.axis}CAL]\n//Step Size in deg, correction in arc-sec\nStepSize={self.step_size}\nCorrection = {" ".join(map(str, cal_data))}'
+        
+        # Split contents into lines
+        lines = contents.split('\n')
+        target_heading = f'[{self.axis}CAL]'
+        
+        # Find the target section and replace it
+        for i in range(len(lines)):
+            if lines[i].strip() == target_heading:
+                # Replace the heading and next 3 lines with new content
+                lines[i:i+4] = new_block.split('\n')
+                break
+        
+        # Join lines back together and write to controller
+        updated_contents = '\n'.join(lines)
+        self.controller.files.write_text(f'{self.sys_serial}-KPMeasurements.txt', updated_contents)
+        #self.controller.runtime.commands.execute('EnableWork',1)
+        messagebox.showinfo('Verify Cal File', 'Cal file has been updated in the controller.')
+        return True
+    
     def create_automation1_file(self, cal_data, corunit):
         self.create_cal_file(cal_data, corunit, 'AUTOMATION1')
 

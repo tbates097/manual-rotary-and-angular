@@ -157,7 +157,10 @@ class rotary_cal():
         self.results = self.controller.runtime.status.get_status_items(status_item_configuration)
         
         axis_status = int(self.results.axis.get(a1.AxisStatusItem.AxisStatus, self.axis).value)
-        self.is_cal = (axis_status & a1.AxisStatus.CalibrationEnabled1D) == a1.AxisStatus.CalibrationEnabled1D
+        if self.stage_type.startswith('HEX'):
+            self.is_cal = True
+        else:
+            self.is_cal = (axis_status & a1.AxisStatus.CalibrationEnabled1D) == a1.AxisStatus.CalibrationEnabled1D
         
         self.clear_text()
         
@@ -559,16 +562,21 @@ class rotary_cal():
         else:
             self.cal = self.open_cal_box()
             if self.cal == 'OK':
-                data_file.make_cal_file()
-                if self.drive == 'Automation1':
+                cal_ver = data_file.make_cal_file()
+                if self.stage_type.startswith('HEX'):
+                    if cal_ver: 
+                        self.controller.reset()
+                        self.controller.runtime.commands.execute('EnableWork()', 1)
+                        self.setup_a1_verification()
+                elif self.drive == 'Automation1':
                     self.controller.runtime.parameters.axes[self.axis].motion.calibrationiirfilter.value=50
                     self.start_path = 'O:/'
                     self.folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(self.start_path) for dir_name in dirs if str(self.sys_serial[0:6]) in dir_name), None)
                     cal_file_path = os.path.join(self.folder_path, 'Customer Files', 'CalFiles', f'{self.sys_serial}-{self.axis}.cal')
                     with open(cal_file_path, 'r') as f:
                         contents = f.read()
-                    self.controller.files.write_text(f'{self.sys_serial}{self.axis}.cal', contents)
-                    self.controller.runtime.commands.calibration.calibrationload(a1.CalibrationType.AxisCalibration1D, f'{self.sys_serial}{self.axis}.cal')
+                    self.controller.files.write_text(f'{self.sys_serial}-{self.axis}.cal', contents)
+                    self.controller.runtime.commands.calibration.calibrationload(a1.CalibrationType.AxisCalibration1D, f'{self.sys_serial}-{self.axis}.cal')
                     self.setup_a1_verification()
             else:
                 messagebox.showinfo('Test Complete', 'Test Is Complete')
