@@ -100,38 +100,38 @@ class aerotech_PDF():
         # Results text box (ax3)
         if self.units == "deg":
             if self.test_type != "Bidirectional":
-                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
+                ax3.text(0.02, 0.7, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
             else:
-                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
-                ax3.text(0.02, 0.7, f'Repeat: {round(self.rep, 3)} arcsec', color='black', size=font_size_ax3)
+                ax3.text(0.02, 0.7, f'Accuracy: {round(self.pk_pk, 3)} arcsec', color='black', size=font_size_ax3)
+                ax3.text(0.02, 0.6, f'Repeat: {round(self.rep, 3)} arcsec', color='black', size=font_size_ax3)
         else:
             radius = self.dia / 2
             linear_pk_pk = ((self.pk_pk / 360) * (2 * math.pi * radius)) / (25.4 if self.units != 'mm' else 1)
             if self.test_type != "Bidirectional":
-                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
+                ax3.text(0.02, 0.7, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
             else:
                 linear_rep = ((self.rep / 360) * (2 * math.pi * radius)) / (25.4 if self.units != 'mm' else 1)
-                ax3.text(0.02, 0.8, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
-                ax3.text(0.02, 0.7, f'Repeat: {round(self.rep, 3)} arcsec ({round(linear_rep, 8)} {self.units})', color='black', size=8.5)
+                ax3.text(0.02, 0.7, f'Accuracy: {round(self.pk_pk, 3)} arcsec ({round(linear_pk_pk, 8)} {self.units})', color='black', size=8.5)
+                ax3.text(0.02, 0.6, f'Repeat: {round(self.rep, 3)} arcsec ({round(linear_rep, 8)} {self.units})', color='black', size=8.5)
 
         # System Information text box (ax4)
-        ax4.text(0.02, 0.8, f'System Serial Number: {self.sys_serial}-{self.axis}', color='black', size=font_size_ax5)
-        ax4.text(0.02, 0.7, f'Stage Serial Number: {self.st_serial}', color='black', size=font_size_ax5)
-        ax4.text(0.02, 0.6, f'Stage: {self.stage_type}', color='black', size=font_size_ax5)
-        ax4.text(0.02, 0.5, f'Date: {self.current_date} {self.current_time}', color='black', size=font_size_ax5)
-        ax4.text(0.02, 0.4, f'Operator: {self.oper}', color='black', size=font_size_ax5)
-        ax4.text(0.02, 0.2, f'Comments: {self.comments}', color='black', size=font_size_ax5, verticalalignment='top')
+        ax4.text(0.02, 0.7, f'System Serial Number: {self.sys_serial}-{self.axis}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.6, f'Stage Serial Number: {self.st_serial}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.5, f'Stage: {self.stage_type}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.4, f'Date: {self.current_date} {self.current_time}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.3, f'Operator: {self.oper}', color='black', size=font_size_ax5)
+        ax4.text(0.02, 0.1, f'Comments: {self.comments}', color='black', size=font_size_ax5, verticalalignment='top')
 
         # Test Conditions text box (ax5)
         degree_sign = u'\N{DEGREE SIGN}'
         pdf_cal = 'Calibrated' if self.is_cal else 'Uncalibrated'
-        ax5.text(0.02, 0.8, f'Temperature: {self.temp} {degree_sign}C', color='black', size=font_size_ax5)
-        ax5.text(0.02, 0.7, f'Calibration Status: {pdf_cal}', color='black', size=font_size_ax5)
-        ax5.text(0.02, 0.6, f'Step Size: {round(self.step_size, 6)} {self.units}', color='black', size=font_size_ax5)
-        ax5.text(0.02, 0.5, f'Travel: {round(self.travel, 6)} {self.units}', color='black', size=font_size_ax5)
-        ax5.text(0.02, 0.4, f'Start Position: {self.start_pos} {self.units}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.7, f'Temperature: {self.temp} {degree_sign}C', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.6, f'Calibration Status: {pdf_cal}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.5, f'Step Size: {round(self.step_size, 6)} {self.units}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.4, f'Travel: {round(self.travel, 6)} {self.units}', color='black', size=font_size_ax5)
+        ax5.text(0.02, 0.3, f'Start Position: {self.start_pos} {self.units}', color='black', size=font_size_ax5)
         if self.units != 'deg':
-            ax5.text(0.02, 0.3, f'Working Diameter: {self.dia} mm', color='black', size=font_size_ax5)
+            ax5.text(0.02, 0.2, f'Working Diameter: {self.dia} mm', color='black', size=font_size_ax5)
 
         if self.is_cal:
             output_file = str(self.sys_serial + '-' + self.axis + "_Verification.pdf")
