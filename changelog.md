@@ -1,6 +1,15 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## 1.2.1 - 2025-01-30
+
+### Fixed
+- Fixed an issue where the hexapod "verification" plots were overwriting the accuracy plots because there was no way for the program to know that it was running a verification test.
+
+### Added
+- A more robust serial communication class
+- A more robust Aerotech PDF class
+
 ## 1.1.1 - 2024-09-12
 
 ### Fixed
