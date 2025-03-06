@@ -22,7 +22,6 @@ import ctypes
 import queue
 
 from RotaryCalTest import rotary_cal
-from AngularTest import angular
 from plot_manager import PlotManager
 
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
@@ -64,12 +63,35 @@ server_thread = None
 controller = None
 is_plot_running = False
 server_running = True
+test_type = 'None'
+units = 'deg'
+drive = 'None'
+is_cal = 0
+window = None
 
 # Add global variables for UI controls
 unit_var = None
 col_axis_var = None
 drive_var = None
 direction = None
+rot_plot_manager = None
+txt_outStr = None
+plot_manager = None
+
+# Add Tkinter variables
+var_axis = None
+var_step = None
+var_travel = None
+var_start = None
+var_temp = None
+var_sys_serial = None
+var_st_serial = None
+var_comm = None
+var_stage = None
+var_op = None
+var_stent = None
+var_cal = None
+var_col = None
 
 # Define the application name and user data file path
 APP_NAME = "ManualRotary"
@@ -132,101 +154,199 @@ def controller_def():
 
     return ver.result
 
-def unit_def(*args):
-    """Define the unit of measurement based on the selection."""
-    global units, unit_var
-    if unit_var and unit_var.get() == "deg":
-        units = 'deg'
-    elif unit_var and unit_var.get() == "arcmin":
-        units = 'arcmin'
-    elif unit_var and unit_var.get() == "arcsec":
-        units = 'arcsec'
-    else:
-        units = 'None'
+def cleanup_resources(rot_cal=None):
+    """
+    Cleans up resources such as threads, connections, and resets global states.
+    """
+    global plot_thread, test_thread, server_thread, is_plot_running, ani, canvas, fig
+    is_plot_running = False
+    
+    if 'ani' in globals() and ani:
+        ani.event_source.stop()
+        ani = None
 
-def col_axis_def(*args):
-    """Define the column axis based on the selection."""
-    global col_axis_X, col_axis_Y, col_axis_var
-    if col_axis_var and col_axis_var.get() == "X":
-        col_axis_X = "X"
-        col_axis_Y = "Y"
-    elif col_axis_var and col_axis_var.get() == "Y":
-        col_axis_X = "Y"
-        col_axis_Y = "Z"
-    elif col_axis_var and col_axis_var.get() == "Z":
-        col_axis_X = "Z"
-        col_axis_Y = "X"
-    else:
-        col_axis_X = ""
-        col_axis_Y = ""
+    if 'plot_thread' in globals() and plot_thread and plot_thread.is_alive():
+        plot_thread.join(timeout=1)
+    plot_thread = None
 
-def drive_def(*args):
-    """Define the drive type based on the selection."""
-    global drive, drive_var
-    if drive_var and drive_var.get() == "USB":
-        drive = 'USB'
-    elif drive_var and drive_var.get() == "A1":
-        drive = 'A1'
-    else:
-        drive = 'None'
+    if test_thread and test_thread.is_alive():
+        try:
+            test_thread.join(timeout=1)
+        except RuntimeError:
+            pass
+    test_thread = None
+    
+    if server_thread and server_thread.is_alive():
+        server_thread.join(timeout=1)
+    server_thread = None
 
-def test_type_def(test_type_value):
-    """Define the test type based on the selection."""
-    global test_type, is_cal
-    test_type = test_type_value
-    if test_type == 'cal':
-        is_cal = 1
-    else:
-        is_cal = 0
+    # Close client socket if it exists
+    if clientsocket:
+        clientsocket.close()
+    
+    # Clean up rot_cal specific resources
+    if rot_cal:
+        del rot_cal
+    
+    gc.collect()
 
 def start_test(input_frame):
     """Start button callback"""
     try:
+        # Add global declarations
+        global var_axis, var_step, var_travel, var_start, var_temp
+        global var_sys_serial, var_st_serial, var_comm, var_stage, var_op
+        global var_stent, var_cal, var_col, test_type, units, drive
+        global controller, test_thread, server_thread
+        
         # Disable run button
         for widget in input_frame.winfo_children():
             if isinstance(widget, ttk.Button) and widget['text'] == 'Run Test':
                 widget.config(state=tk.DISABLED)
                 break
         
-        # Get test parameters
-        axis = str(input_frame.winfo_children()[input_frame.axis_row].winfo_children()[1].get())
-        step_size = float(input_frame.winfo_children()[input_frame.step_row].winfo_children()[1].get())
-        travel = float(input_frame.winfo_children()[input_frame.travel_row].winfo_children()[1].get())
-        st_serial = str(input_frame.winfo_children()[input_frame.job_row].winfo_children()[1].get())
-        comments = str(input_frame.winfo_children()[input_frame.comm_row].winfo_children()[1].get())
-        stage = str(input_frame.winfo_children()[input_frame.stage_row].winfo_children()[1].get())
-        op = str(input_frame.winfo_children()[input_frame.op_row].winfo_children()[1].get())
+        # Validate test direction
+        if test_type not in ['Unidirectional', 'Bidirectional']:
+            raise ValueError("Please select a test direction (Unidirectional or Bidirectional)")
         
-        # Get the appropriate plot manager based on the test type
-        if test_type == 'cal':
-            plot_manager = rot_plot_manager
-            test_class = rotary_cal
-        else:  # Angular test
-            plot_manager = ang_plot_manager
-            test_class = angular
+        # Get and validate values from Tkinter variables
+        try:
+            axis = str(var_axis.get()).strip()
+            if not axis:
+                raise ValueError("Axis Name is required")
+                
+            step_size = float(var_step.get())
+            if step_size <= 0:
+                raise ValueError("Step Size must be greater than 0")
+                
+            travel = float(var_travel.get())
+            if travel <= 0:
+                raise ValueError("Total Travel must be greater than 0")
+                
+            start_pos = float(var_start.get())
+            temp = float(var_temp.get())
+            sys_serial = str(var_sys_serial.get()).strip()
+            st_serial = str(var_st_serial.get()).strip()
+            comments = str(var_comm.get()).strip()
+            stage = str(var_stage.get()).strip()
+            op = str(var_op.get()).strip()
+            
+            # Validate required fields
+            if not all([sys_serial, st_serial, stage, op]):
+                raise ValueError("All documentation fields are required")
+            
+            # Get stent diameter if available
+            if unit_var.get() != 'deg':
+                dia = float(var_stent.get())
+                if dia <= 0:
+                    raise ValueError("Stent Diameter must be greater than 0")
+            else:
+                dia = 0
+                
+        except ValueError as e:
+            raise ValueError(f"Invalid input: {str(e)}")
+            
+        # Default values
+        num_readings = 10  # Default number of readings
+        dwell = 0.1  # Default dwell time
         
+        # Handle Automation1 controller connection if needed
+        if drive == 'A1':
+            try:
+                controller = a1.Controller.connect()
+                controller.start()
+            except:
+                connection_type = controller_def()
+                if connection_type == 'yes':
+                    try:
+                        controller = a1.Controller.connect_usb()
+                        controller.start()
+                    except:
+                        messagebox.showerror('Connection Error', 'Check connections and try again')
+                        return
+                else:
+                    messagebox.showerror('Update Software', 'Update Hyperwire firmware and try again')
+                    return
+
+            # Get connected axes
+            connected_axes = {}
+            non_virtual_axes = []
+            number_of_axes = controller.runtime.parameters.axes.count
+
+            axis_range = range(0, 32) if number_of_axes > 12 else range(0, 11)
+            
+            for axis_index in axis_range:
+                status_item_configuration = a1.StatusItemConfiguration()
+                status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                result = controller.runtime.status.get_status_items(status_item_configuration)
+                axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                
+                if (axis_status & 1 << 13) > 0:
+                    connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+
+            for key, value in connected_axes.items():
+                non_virtual_axes.append(key)
+                
+            if len(non_virtual_axes) == 0:
+                try:
+                    controller = a1.Controller.connect_usb()
+                except:
+                    messagebox.showerror('No Device', 'No Devices Present. Check Connections.')
+                    return
+
+            # Clean up temporary objects
+            del connected_axes, non_virtual_axes, status_item_configuration, result
+
         # Initialize plot
-        if test_type == 'cal':
-            plot_manager.setup_plot(axis)
-        else:
-            plot_manager.setup_plot(axis, col_axis_X, col_axis_Y)
-        
-        # Run the test
-        test_instance = test_class(
-            axis, step_size, travel, units, test_type, st_serial, 
-            comments, stage, op, txt_outStr if test_type == 'cal' else txt_outStr1,
-            window
-        )
+        plot_manager = rot_plot_manager
+        plot_manager.setup_plot(axis)
         
         # Set up data callback
         def on_data_update(positions, measurements, reverse_data=None, axis_num=None):
             plot_manager.update_plot(positions, measurements, reverse_data, axis_num)
         
-        # Start the test with the callback
-        test_instance.setup_test(on_data_update)
+        # Create and run test instance
+        test_instance = rotary_cal(
+            axis=axis,
+            num_readings=num_readings,
+            dwell=dwell,
+            step_size=step_size,
+            travel=travel,
+            units=units,
+            dia=dia,
+            test_type=test_type,
+            sys_serial=sys_serial,
+            st_serial=st_serial,
+            comments=comments,
+            temp=temp,
+            start_pos=start_pos,
+            drive=drive,
+            stage_type=stage,
+            oper=op,
+            text_widget=txt_outStr,
+            window=window,
+            on_data_update=on_data_update,
+            is_cal=var_cal.get(),
+            col_axis=var_col.get()
+        )
+        
+        # Run the test based on controller type
+        if drive == 'A1':
+            test_instance.a1_test(controller)
+        else:
+            test_instance.test()
+            
+        # Cleanup after test
+        if controller:
+            controller.disconnect()
+            controller = None
+            
+        cleanup_resources(test_instance)
         
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to start test: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        messagebox.showerror("Error", f"Failed to start test: {str(e)}\n\nDetails:\n{error_details}")
         # Re-enable run button
         for widget in input_frame.winfo_children():
             if isinstance(widget, ttk.Button) and widget['text'] == 'Run Test':
@@ -237,80 +357,83 @@ def import_data(input_frame):
     """Import data from a file."""
     try:
         # Get test parameters
-        axis = str(input_frame.winfo_children()[input_frame.axis_row].winfo_children()[1].get())
-        step_size = float(input_frame.winfo_children()[input_frame.step_row].winfo_children()[1].get())
-        travel = float(input_frame.winfo_children()[input_frame.travel_row].winfo_children()[1].get())
-        st_serial = str(input_frame.winfo_children()[input_frame.job_row].winfo_children()[1].get())
-        comments = str(input_frame.winfo_children()[input_frame.comm_row].winfo_children()[1].get())
-        stage = str(input_frame.winfo_children()[input_frame.stage_row].winfo_children()[1].get())
-        op = str(input_frame.winfo_children()[input_frame.op_row].winfo_children()[1].get())
+        axis = str(var_axis.get())
+        step_size = float(var_step.get())
+        travel = float(var_travel.get())
+        st_serial = str(var_st_serial.get())
+        comments = str(var_comm.get())
+        stage = str(var_stage.get())
+        op = str(var_op.get())
         
-        # Get the appropriate test class based on the test type
-        if test_type == 'cal':
-            test_class = rotary_cal
-            text_widget = txt_outStr
-        else:  # Angular test
-            test_class = angular
-            text_widget = txt_outStr1
+        test_class = rotary_cal
+        text_widget = txt_outStr
         
-        # Run the test
+        # Create test instance
         test_instance = test_class(
-            axis, step_size, travel, units, test_type, st_serial, 
-            comments, stage, op, text_widget, window
+            axis=axis,
+            step_size=step_size,
+            travel=travel,
+            units=units,
+            test_type=test_type,
+            st_serial=st_serial,
+            comments=comments,
+            stage_type=stage,
+            oper=op,
+            text_widget=text_widget,
+            window=window
         )
-        test_instance.setup_test()
+        
+        # Import the data
+        test_instance.import_data()
         
     except Exception as e:
         messagebox.showerror("Error", f"Failed to import data: {str(e)}")
 
 def open_rotary_Plot():
-    """Open a new window with the rotary calibration plot."""
-    plot_window = tk.Toplevel(window)
-    plot_window.title("Rotary Calibration Plot")
-    plot_window.configure(bg=BACKGROUND)
-    
-    # Create plot frame
-    plot_frame = ttk.Frame(plot_window, padding="10 10 10 10", style='Card.TFrame')
-    plot_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
-    
-    # Configure plot frame grid
-    plot_frame.grid_rowconfigure(0, weight=1)
-    plot_frame.grid_columnconfigure(0, weight=1)
-    
-    # Initialize plot manager for the new window
-    plot_manager = PlotManager(plot_window, plot_frame, plot_type='rotary')
-    plot_manager.setup_plot("Rotary Calibration")
-    
-    # Size and position the window
-    width = 800
-    height = 600
-    screen_width = plot_window.winfo_screenwidth()
-    screen_height = plot_window.winfo_screenheight()
-    x_cordinate = int((screen_width/2) - (width/2))
-    y_cordinate = int((screen_height/2) - (height/2))
-    plot_window.geometry(f"{width}x{height}+{x_cordinate}+{y_cordinate}")
-    
-    # Configure window grid
-    plot_window.grid_rowconfigure(0, weight=1)
-    plot_window.grid_columnconfigure(0, weight=1)
-    plot_window.focus_set()
+    sys.stdout = TextLogger(txt_outStr)
+    axis = var_axis.get()
+    sys_serial = var_sys_serial.get()
+
+    start_path = ('O:/')
+    folder_path = next((os.path.join(root, dir_name) for root, dirs, _ in os.walk(start_path) for dir_name in dirs if str(sys_serial[0:6]) in dir_name), None)
+    pdf_file_path = folder_path + '/Customer Files/Plots'
+
+    if os.path.exists(pdf_file_path):
+        try:
+            output_file = str(sys_serial + '-' + axis + "_Accuracy.pdf")
+            pdf = pdf_file_path + '/' + output_file
+            os.startfile(pdf)
+        except:
+            pass
+        try:
+            output_file = str(sys_serial + '-' + axis + "_Verification.pdf")
+            pdf = pdf_file_path + '/' + output_file
+            os.startfile(pdf)
+        except:
+            pass
+    else:
+        print(f"File '{pdf_file_path}' does not exist.")
 
 def UI():
-    global window, plot_manager, test_type, units, drive, is_cal
-    
+    global window, plot_manager, test_type, units, drive, is_cal, rot_plot_manager, txt_outStr
+    global var_axis, var_step, var_travel, var_start, var_temp, var_sys_serial, var_st_serial, var_comm, var_stage, var_op, var_stent, var_cal, var_col
+    global unit_var, col_axis_var, drive_var, direction
+
     # Initialize global variables
     test_type = 'None'
     units = 'deg'
     drive = 'None'
     is_cal = 0
     plot_manager = None
+    rot_plot_manager = None
+    txt_outStr = None
     
     # Load stored user inputs
     stored_data = load_user_inputs()
     
     # Initialize Tkinter window with Automation1 styling
     window = tk.Tk()
-    window.title("Rotary and Angular Testing")
+    window.title("Rotary Testing")
     window.configure(bg=BACKGROUND)
 
     # Create and configure style
@@ -431,75 +554,46 @@ def UI():
     window.focus_force()
     window.resizable(True, False)
 
-    # Create notebook for tabs
-    interface = ttk.Notebook(window)
-    interface.pack(fill='both', expand=True)
+    # Create main frame
+    main_frame = ttk.Frame(window, style='Card.TFrame')
+    main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+    main_frame.grid_rowconfigure(0, weight=1)
+    main_frame.grid_columnconfigure(0, weight=0)
+    main_frame.grid_columnconfigure(1, weight=1)
 
-    # Create frames for each tab
-    tab1 = ttk.Frame(interface, style='Card.TFrame')
-    tab2 = ttk.Frame(interface, style='Card.TFrame')
+    # Create input frame
+    input_frame_width = 850
+    input_frame_height = 800
 
-    # Add tabs to notebook
-    interface.add(tab1, text='Rotary Cal')
-    interface.add(tab2, text='Angular Testing')
-
-    # Configure main grid for both tabs
-    for tab in (tab1, tab2):
-        tab.grid_rowconfigure(0, weight=1)
-        tab.grid_columnconfigure(0, weight=0)
-        tab.grid_columnconfigure(1, weight=1)
-
-    # Create input frames for both tabs
-    input_frame_width = 850  # Reduced from 1000
-    input_frame_height = 800  # Increased from 750
-
-    rot_input_frame = ttk.Frame(
-        tab1,
+    input_frame = ttk.Frame(
+        main_frame,
         padding="10 10 10 10",
         style='Card.TFrame',
         width=input_frame_width,
         height=input_frame_height
     )
-    rot_input_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)  # Reduced padding
-    
-    ang_input_frame = ttk.Frame(
-        tab2,
-        padding="10 10 10 10",
-        style='Card.TFrame',
-        width=input_frame_width,
-        height=input_frame_height
-    )
-    ang_input_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)  # Reduced padding
+    input_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
 
-    # Create plot frames with increased width
-    plot_frame_width = 900  # Increased from 700
-    
-    rot_plot_frame = ttk.Frame(tab1, padding="10 10 10 10", style='Card.TFrame', width=plot_frame_width)
-    rot_plot_frame.grid(row=0, column=1, rowspan=2, sticky='nsew', padx=10, pady=10)
-    
-    ang_plot_frame = ttk.Frame(tab2, padding="10 10 10 10", style='Card.TFrame', width=plot_frame_width)
-    ang_plot_frame.grid(row=0, column=1, rowspan=2, sticky='nsew', padx=10, pady=10)
+    # Create plot frame
+    plot_frame_width = 900
+    plot_frame = ttk.Frame(main_frame, padding="10 10 10 10", style='Card.TFrame', width=plot_frame_width)
+    plot_frame.grid(row=0, column=1, rowspan=2, sticky='nsew', padx=10, pady=10)
 
-    # Configure plot frames
-    for frame in (rot_plot_frame, ang_plot_frame):
-        frame.grid_rowconfigure(0, weight=1)
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_propagate(False)  # Prevent frame from shrinking
+    # Configure plot frame
+    plot_frame.grid_rowconfigure(0, weight=1)
+    plot_frame.grid_columnconfigure(0, weight=1)
+    plot_frame.grid_propagate(False)
 
-    # Initialize plot managers
-    rot_plot_manager = PlotManager(window, rot_plot_frame, plot_type='rotary')
-    ang_plot_manager = PlotManager(window, ang_plot_frame, plot_type='angular')
+    # Initialize plot manager
+    rot_plot_manager = PlotManager(window, plot_frame, plot_type='rotary')
 
-    # Create text output frames
-    rot_text_frame = ttk.Frame(tab1, padding="10 10 10 10", style='Card.TFrame')
-    rot_text_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
-    
-    ang_text_frame = ttk.Frame(tab2, padding="10 10 10 10", style='Card.TFrame')
-    ang_text_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
+    # Create text output frame
+    text_frame = ttk.Frame(main_frame, padding="10 10 10 10", style='Card.TFrame')
+    text_frame.grid(row=1, column=0, sticky='nsew', padx=10, pady=10)
 
-    # Configure text widgets
+    # Configure text widget
     txt_outStr = tk.Text(
-        rot_text_frame,
+        text_frame,
         wrap=tk.WORD,
         font=('Consolas', 10),
         fg=TEXT_PRIMARY,
@@ -512,39 +606,18 @@ def UI():
         pady=10
     )
     txt_outStr.grid(row=0, column=0, sticky='nsew')
-    
-    txt_outStr1 = tk.Text(
-        ang_text_frame,
-        wrap=tk.WORD,
-        font=('Consolas', 10),
-        fg=TEXT_PRIMARY,
-        bg=WHITE,
-        insertbackground=TEXT_PRIMARY,
-        height=10,
-        relief='solid',
-        borderwidth=1,
-        padx=10,
-        pady=10
-    )
-    txt_outStr1.grid(row=0, column=0, sticky='nsew')
 
-    # Add modern scrollbars
-    rot_scrollbar = ttk.Scrollbar(rot_text_frame, orient='vertical', command=txt_outStr.yview)
-    rot_scrollbar.grid(row=0, column=1, sticky='ns')
-    txt_outStr.configure(yscrollcommand=rot_scrollbar.set)
-    
-    ang_scrollbar = ttk.Scrollbar(ang_text_frame, orient='vertical', command=txt_outStr1.yview)
-    ang_scrollbar.grid(row=0, column=1, sticky='ns')
-    txt_outStr1.configure(yscrollcommand=ang_scrollbar.set)
+    # Add modern scrollbar
+    scrollbar = ttk.Scrollbar(text_frame, orient='vertical', command=txt_outStr.yview)
+    scrollbar.grid(row=0, column=1, sticky='ns')
+    txt_outStr.configure(yscrollcommand=scrollbar.set)
 
-    # Configure text frame grids
-    for frame in (rot_text_frame, ang_text_frame):
-        frame.grid_rowconfigure(0, weight=1)
-        frame.grid_columnconfigure(0, weight=1)
+    # Configure text frame grid
+    text_frame.grid_rowconfigure(0, weight=1)
+    text_frame.grid_columnconfigure(0, weight=1)
 
-    # Initialize loggers
+    # Initialize logger
     text_logger = TextLogger(txt_outStr)
-    text_logger1 = TextLogger(txt_outStr1)
 
     # Load stored data or set defaults
     rot_axis_value = stored_data.get("axis_name", "X")
@@ -570,7 +643,7 @@ def UI():
     }
 
     # Configure input frames with proper row indices
-    for input_frame in (rot_input_frame, ang_input_frame):
+    for input_frame in (input_frame,):
         # Configure columns to be equal width
         for i in range(4):
             input_frame.grid_columnconfigure(i, weight=1, uniform='column')
@@ -668,39 +741,90 @@ def UI():
         "cursor": "hand2"
     }
 
+    def test_type_def():
+        global test_type
+        if direction.get() == "uni":
+            test_type = 'Unidirectional'
+        elif direction.get() == "bi":
+            test_type = 'Bidirectional'
+        else:
+            test_type = 'None'
+
+    def unit_def():
+        global units
+        if unit_var.get() == 'deg':
+            var_stent.set('None')
+            units = 'deg'
+            ent_stent["state"] = tk.DISABLED
+        elif unit_var.get() == 'mm':
+            units = 'mm'
+            ent_stent["state"] = tk.NORMAL
+        elif unit_var.get() == 'in':
+            units = 'in'
+            ent_stent["state"] = tk.NORMAL
+        else:
+            units = 'None'
+            ent_stent["state"] = tk.DISABLED
+
+    def drive_def():
+        global drive, is_cal
+        if drive_var.get() == 'A1':
+            cbx_cal["state"] = tk.DISABLED
+            col_menu["state"] = tk.DISABLED
+            var_cal.set(0)
+            is_cal = 0
+            drive = 'Automation1'
+        elif drive_var.get() == 'A3200':
+            cbx_cal["state"] = tk.NORMAL
+            col_menu["state"] = tk.NORMAL
+            drive = 'Other'
+            if var_cal.get() == 1:
+                is_cal = 1
+            else:
+                is_cal = 0
+        else:
+            drive = 'None'
+
+    def cal_def():
+        global is_cal
+        if var_cal.get() == 1:
+            is_cal = 1
+        else:
+            is_cal = 0
+
     # Frame style for radio button groups
     style.configure('RadioFrame.TFrame',
                    background=BACKGROUND)  # Match parent background
 
     # Add input fields with modern styling to both frames
-    for input_frame, is_rotary in [(rot_input_frame, True), (ang_input_frame, False)]:
+    for input_frame, is_rotary in [(input_frame, True)]:
         if is_rotary:
-            # Test Type Selection and Collimator Axis (side by side in configuration)
+            # Test Type Selection
             lbl_test = tk.Label(input_frame, text="Test Type:", **main_label_style)
             lbl_test.grid(row=input_frame.test_row, column=0, padx=5, pady=3, sticky='w')
             
             direction = tk.StringVar(value=0)
-            uni_dir = tk.Radiobutton(
+            uni_dir = ttk.Radiobutton(
                 input_frame,
                 text="Unidirectional",
                 variable=direction,
                 value="uni",
-                command=lambda: test_type_def('uni'),
-                **radio_style
+                command=test_type_def,
+                style='Modern.TRadiobutton'
             )
             uni_dir.grid(row=input_frame.test_row, column=1, padx=5, pady=3)
             
-            bi_dir = tk.Radiobutton(
+            bi_dir = ttk.Radiobutton(
                 input_frame,
                 text="Bidirectional",
                 variable=direction,
                 value="bi",
-                command=lambda: test_type_def('bi'),
-                **radio_style
+                command=test_type_def,
+                style='Modern.TRadiobutton'
             )
             bi_dir.grid(row=input_frame.test_row, column=2, padx=5, pady=3)
 
-            # Axis Name and Starting Position (side by side)
+            # Axis Name and Starting Position
             lbl_axis = tk.Label(input_frame, text="Axis Name:", **main_label_style)
             lbl_axis.grid(row=input_frame.axis_row, column=0, padx=5, pady=5, sticky='w')
             
@@ -715,7 +839,7 @@ def UI():
             ent_start_pos = ttk.Entry(input_frame, textvariable=var_start, style='Modern.TEntry')
             ent_start_pos.grid(row=input_frame.axis_row, column=3, padx=5, pady=5, sticky='ew')
 
-            # Total Travel and Step Size (side by side)
+            # Total Travel and Step Size
             lbl_travel = tk.Label(input_frame, text="Total Travel:", **main_label_style)
             lbl_travel.grid(row=input_frame.travel_row, column=0, padx=5, pady=5, sticky='w')
             
@@ -730,23 +854,11 @@ def UI():
             ent_step = ttk.Entry(input_frame, textvariable=var_step, style='Modern.TEntry')
             ent_step.grid(row=input_frame.travel_row, column=3, padx=5, pady=5, sticky='ew')
 
-            # Units and Stent Diameter
+            # Units Selection
             lbl_units = tk.Label(input_frame, text="Units:", **main_label_style)
             lbl_units.grid(row=input_frame.units_row, column=0, padx=5, pady=2, sticky='w')
             
-            global unit_var
             unit_var = tk.StringVar(value='deg')
-            
-            def on_unit_change(*args):
-                unit_def()
-                # Enable/disable stent diameter based on units
-                if unit_var.get() == 'deg':
-                    ent_stent.configure(state=tk.DISABLED)
-                else:
-                    ent_stent.configure(state=tk.NORMAL)
-            
-            unit_var.trace_add('write', on_unit_change)
-            
             units_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
             units_frame.grid(row=input_frame.units_row, column=1, sticky='w')
             
@@ -760,133 +872,116 @@ def UI():
                     style='Modern.TRadiobutton'
                 ).grid(row=0, column=i, padx=2)
 
+            # Stent Diameter
             lbl_stent = tk.Label(input_frame, text="Stent Diameter (mm):", **main_label_style)
             lbl_stent.grid(row=input_frame.units_row, column=2, padx=5, pady=2, sticky='w')
             
             var_stent = tk.StringVar(value=rot_stent_value)
-            ent_stent = ttk.Entry(input_frame, textvariable=var_stent, state=tk.DISABLED, width=8, style='Modern.TEntry')
+            ent_stent = ttk.Entry(input_frame, textvariable=var_stent, state=tk.DISABLED, style='Modern.TEntry')
             ent_stent.grid(row=input_frame.units_row, column=3, padx=5, pady=2, sticky='w')
 
-            # Controller Selection and Collimator Axis
+            # Controller Selection
             lbl_drive = tk.Label(input_frame, text="Controller:", **main_label_style)
             lbl_drive.grid(row=input_frame.drive_row, column=0, padx=5, pady=2, sticky='w')
             
-            global drive_var
-            drive_var = tk.StringVar(value='USB')
-            
+            drive_var = tk.StringVar(value='A1')
             drive_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
             drive_frame.grid(row=input_frame.drive_row, column=1, sticky='w')
             
-            cbx_a1 = ttk.Radiobutton(
+            ttk.Radiobutton(
                 drive_frame,
                 text="A1",
                 variable=drive_var,
                 value='A1',
                 command=drive_def,
                 style='Modern.TRadiobutton'
-            )
-            cbx_a1.grid(row=0, column=0, padx=2)
+            ).grid(row=0, column=0, padx=2)
             
-            cbx_other = ttk.Radiobutton(
+            ttk.Radiobutton(
                 drive_frame,
                 text="A3200",
                 variable=drive_var,
-                value='USB',
+                value='A3200',
                 command=drive_def,
                 style='Modern.TRadiobutton'
-            )
-            cbx_other.grid(row=0, column=1, padx=2)
+            ).grid(row=0, column=1, padx=2)
 
+            # Collimator Axis
             lbl_col = tk.Label(input_frame, text="Collimator Axis:", **main_label_style)
             lbl_col.grid(row=input_frame.drive_row, column=2, padx=5, pady=2, sticky='w')
             
             var_col = tk.StringVar(value=rot_col_value)
-            col_options = ['X', 'Y']
-            col_menu = ttk.OptionMenu(input_frame, var_col, col_options[0], *col_options, style='Modern.TMenubutton')
+            col_menu = ttk.OptionMenu(input_frame, var_col, rot_col_value, 'X', 'Y', style='Modern.TMenubutton')
             col_menu.grid(row=input_frame.drive_row, column=3, padx=5, pady=2, sticky='w')
             col_menu.configure(width=3)
 
-            # Documentation fields with adjusted widths and two-column layout
-            var_sys_serial = tk.StringVar(value=rot_sys_value)
-            ent_sys_serial = ttk.Entry(input_frame, textvariable=var_sys_serial, width=20, style='Modern.TEntry')
-
-            var_st_serial = tk.StringVar(value=rot_st_value)
-            ent_st_serial = ttk.Entry(input_frame, textvariable=var_st_serial, width=20, style='Modern.TEntry')
-
-            var_stage = tk.StringVar(value=rot_part_value)
-            ent_stage = ttk.Entry(input_frame, textvariable=var_stage, width=20, style='Modern.TEntry')
-
-            var_op = tk.StringVar(value=rot_op_value)
-            ent_op = ttk.Entry(input_frame, textvariable=var_op, width=20, style='Modern.TEntry')
-
-            var_temp = tk.DoubleVar(value=rot_temp_value)  # Define temperature variable here
-            ent_temp = ttk.Entry(input_frame, textvariable=var_temp, width=8, style='Modern.TEntry')
-
-            var_comm = tk.StringVar(value=rot_comm_value)
-            ent_comm = ttk.Entry(input_frame, textvariable=var_comm, width=40, style='Modern.TEntry')
-
-            # Add documentation fields to grid in two columns
-            # Left column
-            lbl_sys = tk.Label(input_frame, text="System Serial Number:", **main_label_style)
-            lbl_sys.grid(row=input_frame.sys_row, column=0, padx=5, pady=2, sticky='w')
-            ent_sys_serial.grid(row=input_frame.sys_row, column=1, padx=5, pady=2, sticky='w')
-
-            lbl_stage = tk.Label(input_frame, text="Stage Part Number:", **main_label_style)
-            lbl_stage.grid(row=input_frame.stage_row, column=0, padx=5, pady=2, sticky='w')
-            ent_stage.grid(row=input_frame.stage_row, column=1, padx=5, pady=2, sticky='w')
-
-            # Right column
-            lbl_st = tk.Label(input_frame, text="Stage Serial Number:", **main_label_style)
-            lbl_st.grid(row=input_frame.sys_row, column=2, padx=5, pady=2, sticky='w')
-            ent_st_serial.grid(row=input_frame.sys_row, column=3, padx=5, pady=2, sticky='w')
-
-            lbl_op = tk.Label(input_frame, text="Operator:", **main_label_style)
-            lbl_op.grid(row=input_frame.stage_row, column=2, padx=5, pady=2, sticky='w')
-            ent_op.grid(row=input_frame.stage_row, column=3, padx=5, pady=2, sticky='w')
-
-            # Temperature and Calibrated
-            lbl_temp = tk.Label(input_frame, text="Temperature (°C):", **main_label_style)
-            lbl_temp.grid(row=input_frame.temp_row, column=0, padx=5, pady=2, sticky='w')
-            ent_temp.grid(row=input_frame.temp_row, column=1, padx=5, pady=2, sticky='w')  # Just grid the existing entry
-
+            # Calibration Checkbox
             var_cal = tk.IntVar(value=0)
             cbx_cal = ttk.Checkbutton(
                 input_frame,
                 text="Calibrated",
                 variable=var_cal,
-                state=tk.NORMAL,
+                command=cal_def,
                 style='Modern.TCheckbutton'
             )
             cbx_cal.grid(row=input_frame.temp_row, column=2, padx=5, pady=2, sticky='w')
 
-            # Comments spans both columns
-            lbl_comm = tk.Label(input_frame, text="Comments:", **main_label_style)
-            lbl_comm.grid(row=input_frame.comm_row, column=0, padx=5, pady=2, sticky='w')
-            ent_comm.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=2, sticky='ew')
+            # Documentation fields
+            var_sys_serial = tk.StringVar(value=rot_sys_value)
+            var_st_serial = tk.StringVar(value=rot_st_value)
+            var_stage = tk.StringVar(value=rot_part_value)
+            var_op = tk.StringVar(value=rot_op_value)
+            var_temp = tk.DoubleVar(value=rot_temp_value)
+            var_comm = tk.StringVar(value=rot_comm_value)
 
-            def on_controller_change(*args):
-                drive_def()
-                # Enable/disable collimator axis and calibrated based on controller
-                if drive_var.get() == 'A1':
-                    col_menu.configure(state=tk.DISABLED)
-                    cbx_cal.configure(state=tk.DISABLED)
-                else:
-                    col_menu.configure(state=tk.NORMAL)
-                    cbx_cal.configure(state=tk.NORMAL)
-            
-            drive_var.trace_add('write', on_controller_change)
+            # Left Column
+            # System Serial Number
+            lbl_sys = tk.Label(input_frame, text="System Serial Number:", **main_label_style)
+            lbl_sys.grid(row=input_frame.sys_row, column=0, padx=5, pady=2, sticky='w')
+            ent_sys_serial = ttk.Entry(input_frame, textvariable=var_sys_serial, width=25, style='Modern.TEntry')
+            ent_sys_serial.grid(row=input_frame.sys_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Initial state setup
-            on_unit_change()
-            on_controller_change()
+            # Stage Part Number
+            lbl_stage = tk.Label(input_frame, text="Stage Part Number:", **main_label_style)
+            lbl_stage.grid(row=input_frame.stage_row, column=0, padx=5, pady=2, sticky='w')
+            ent_stage = ttk.Entry(input_frame, textvariable=var_stage, width=25, style='Modern.TEntry')
+            ent_stage.grid(row=input_frame.stage_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Adjust vertical padding for specific rows
-            input_frame.rowconfigure(input_frame.travel_row, minsize=20)  # Reduced space after Total Travel row
-            input_frame.rowconfigure(input_frame.units_row, minsize=20)  # Reduced space before Units row
+            # Temperature
+            lbl_temp = tk.Label(input_frame, text="Temperature (°C):", **main_label_style)
+            lbl_temp.grid(row=input_frame.temp_row, column=0, padx=5, pady=2, sticky='w')
+            ent_temp = ttk.Entry(input_frame, textvariable=var_temp, width=8, style='Modern.TEntry')
+            ent_temp.grid(row=input_frame.temp_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Action buttons row with more vertical space
+            # Right Column
+            # Stage Serial Number
+            lbl_st = tk.Label(input_frame, text="Stage Serial Number:", **main_label_style)
+            lbl_st.grid(row=input_frame.sys_row, column=2, padx=5, pady=2, sticky='w')
+            ent_st_serial = ttk.Entry(input_frame, textvariable=var_st_serial, width=25, style='Modern.TEntry')
+            ent_st_serial.grid(row=input_frame.sys_row, column=3, padx=5, pady=2, sticky='w')
+
+            # Operator
+            lbl_op = tk.Label(input_frame, text="Operator:", **main_label_style)
+            lbl_op.grid(row=input_frame.stage_row, column=2, padx=5, pady=2, sticky='w')
+            ent_op = ttk.Entry(input_frame, textvariable=var_op, width=25, style='Modern.TEntry')
+            ent_op.grid(row=input_frame.stage_row, column=3, padx=5, pady=2, sticky='w')
+
+            # Comments (spans both columns)
+            lbl_comments = tk.Label(input_frame, text="Comments:", **main_label_style)
+            lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=2, sticky='w')
+            ent_comments = ttk.Entry(input_frame, textvariable=var_comm, width=80, style='Modern.TEntry')
+            ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=2, sticky='w')
+
+            # Update other entry field widths
+            ent_axis.configure(width=25)
+            ent_start_pos.configure(width=25)
+            ent_travel.configure(width=25)
+            ent_step.configure(width=25)
+            ent_stent.configure(width=25)
+
+            # Action buttons
             button_frame = ttk.Frame(input_frame, style='Card.TFrame')
-            button_frame.grid(row=input_frame.run_row, column=0, columnspan=4, sticky='ew', padx=5, pady=(15, 25))  # Increased padding
+            button_frame.grid(row=input_frame.run_row, column=0, columnspan=4, sticky='ew', padx=5, pady=(15, 25))
             button_frame.columnconfigure(0, weight=1)
             button_frame.columnconfigure(1, weight=1)
             button_frame.columnconfigure(2, weight=1)
@@ -897,7 +992,7 @@ def UI():
                 command=lambda frame=input_frame: start_test(frame),
                 style='Primary.TButton'
             )
-            btn_run.grid(row=0, column=0, padx=5, pady=(5, 10), sticky='ew')  # Added bottom padding
+            btn_run.grid(row=0, column=0, padx=5, pady=(5, 10), sticky='ew')
             
             btn_import = ttk.Button(
                 button_frame,
@@ -905,7 +1000,7 @@ def UI():
                 command=lambda frame=input_frame: import_data(frame),
                 style='Secondary.TButton'
             )
-            btn_import.grid(row=0, column=1, padx=5, pady=(5, 10), sticky='ew')  # Added bottom padding
+            btn_import.grid(row=0, column=1, padx=5, pady=(5, 10), sticky='ew')
 
             btn_open_plot = ttk.Button(
                 button_frame,
@@ -913,7 +1008,7 @@ def UI():
                 command=open_rotary_Plot,
                 style='Secondary.TButton'
             )
-            btn_open_plot.grid(row=0, column=2, padx=5, pady=(5, 10), sticky='ew')  # Added bottom padding
+            btn_open_plot.grid(row=0, column=2, padx=5, pady=(5, 10), sticky='ew')
 
     window.mainloop()
 

@@ -15,7 +15,6 @@ import math
 import numpy as np
 import datetime
 import threading
-import socket
 import gc
 
 from AerotechDataCal import data_and_cal
@@ -49,6 +48,7 @@ class rotary_cal():
 
         self.is_cal = kwargs.get('is_cal', None)
         self.col_axis = kwargs.get('col_axis', None)
+        self.on_data_update = kwargs.get('on_data_update', None)  # Add callback for plot updates
         
         self.text_logger = TextLogger(text_widget)
         sys.stdout = self.text_logger
@@ -627,7 +627,15 @@ class rotary_cal():
             data_repeat = str(round(max(abs(max(self.data_rep)), abs(min(self.data_rep))), 4))
             self.display_results(f'Accuracy: {accuracy}\nRepeat: {data_repeat}')
         
-        self.send_data(f"{direction}_fbk: {self.pos_fbk}", f"{direction}_col: {coldata}")
+        # Update the plot with new data
+        if hasattr(self, 'on_data_update'):
+            if direction == 'forward':
+                self.on_data_update(self.raw_for_pos, self.raw_forward)
+            else:
+                # For reverse direction, only send the current position and value
+                current_pos = pos_list[-1]
+                current_val = data_list[-1]
+                self.on_data_update(self.raw_for_pos, self.raw_forward, [(current_pos, current_val)])
 
     def move_incremental(self, distance):
         self.controller.runtime.commands.motion.moveincremental([self.axis], [distance], [self.speed])
@@ -669,7 +677,6 @@ class rotary_cal():
     def display_results(self, message):
         self.text_widget.config(state=tk.NORMAL)
         self.text_widget.delete(1.0, tk.END)
-        self.text_widget.config(state=tk.DISABLED)
         self.text_logger.write(message)
 
     def open_data_box(self):
@@ -842,39 +849,7 @@ class rotary_cal():
         cal.wait_window()
         
         return cal.result
-    
-    def connect_to_server(self, retry_count=5, delay=1):
-        """
-        Attempts to connect to the server with retries.
-        """
-        # Make sure retry_count is an integer
-        #print('Connecting to server - RotaryCalTest')
-        if not isinstance(retry_count, int):
-            raise TypeError("retry_count must be an integer")
-    
-        for attempt in range(retry_count):
-            try:
-                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.client_socket.connect((socket.gethostname(), 1234))  # Ensure the address and port are correct
-                #print("Connecting to:", socket.gethostname(), "on port 1234 - RotaryCalTest")
-                #print("Connected to server successfully. - RotaryCalTest")
-                return self.client_socket
-            except socket.error as e:
-                print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
-                time.sleep(delay)
-        print("Failed to connect to server after multiple attempts.")
-        return None
-    
-    def send_data(self, x, y):
-        if self.client_socket:
-            message = f"{x},{y}\n".encode('utf-8')
-            try:
-                self.client_socket.sendall(message)
-            except socket.error as e:
-                print(f"Failed to send data: {e}")
-                self.client_socket.close()  # Close socket on error
-                self.client_socket = None
-                
+        
     def cleanup_data(self):
         self.raw_for_pos.clear()
         self.raw_rev_pos.clear()
@@ -890,6 +865,5 @@ class rotary_cal():
         #print("Data lists cleared to free up memory.")
         
     def cleanup_resources(self):
-        # ... existing cleanup code ...
         gc.collect()  # Force garbage collection to free up memory
         #print("Garbage collection completed.")
