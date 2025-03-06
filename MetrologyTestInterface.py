@@ -198,7 +198,6 @@ def start_test(input_frame):
         global var_sys_serial, var_st_serial, var_comm, var_stage, var_op
         global var_stent, var_cal, var_col, test_type, units, drive
         global controller, test_thread, server_thread
-        
         # Disable run button
         for widget in input_frame.winfo_children():
             if isinstance(widget, ttk.Button) and widget['text'] == 'Run Test':
@@ -251,7 +250,7 @@ def start_test(input_frame):
         dwell = 0.1  # Default dwell time
         
         # Handle Automation1 controller connection if needed
-        if drive == 'A1':
+        if drive == 'Automation1':
             try:
                 controller = a1.Controller.connect()
                 controller.start()
@@ -299,11 +298,11 @@ def start_test(input_frame):
 
         # Initialize plot
         plot_manager = rot_plot_manager
-        plot_manager.setup_plot(axis)
+        plot_manager.setup_plot(axis, units=units)
         
         # Set up data callback
         def on_data_update(positions, measurements, reverse_data=None, axis_num=None):
-            plot_manager.update_plot(positions, measurements, reverse_data, axis_num)
+            plot_manager.update_plot(positions, measurements, reverse_data, axis_num, units=units)
         
         # Create and run test instance
         test_instance = rotary_cal(
@@ -331,7 +330,7 @@ def start_test(input_frame):
         )
         
         # Run the test based on controller type
-        if drive == 'A1':
+        if drive == 'Automation1':
             test_instance.a1_test(controller)
         else:
             test_instance.test()
@@ -772,9 +771,10 @@ def UI():
             cbx_cal["state"] = tk.DISABLED
             col_menu["state"] = tk.DISABLED
             var_cal.set(0)
+            var_cal.set(0)
             is_cal = 0
             drive = 'Automation1'
-        elif drive_var.get() == 'A3200':
+        elif drive_var.get() == 'Other':
             cbx_cal["state"] = tk.NORMAL
             col_menu["state"] = tk.NORMAL
             drive = 'Other'
@@ -797,218 +797,217 @@ def UI():
                    background=BACKGROUND)  # Match parent background
 
     # Add input fields with modern styling to both frames
-    for input_frame, is_rotary in [(input_frame, True)]:
-        if is_rotary:
-            # Test Type Selection
-            lbl_test = tk.Label(input_frame, text="Test Type:", **main_label_style)
-            lbl_test.grid(row=input_frame.test_row, column=0, padx=5, pady=3, sticky='w')
-            
-            direction = tk.StringVar(value=0)
-            uni_dir = ttk.Radiobutton(
-                input_frame,
-                text="Unidirectional",
-                variable=direction,
-                value="uni",
-                command=test_type_def,
-                style='Modern.TRadiobutton'
-            )
-            uni_dir.grid(row=input_frame.test_row, column=1, padx=5, pady=3)
-            
-            bi_dir = ttk.Radiobutton(
-                input_frame,
-                text="Bidirectional",
-                variable=direction,
-                value="bi",
-                command=test_type_def,
-                style='Modern.TRadiobutton'
-            )
-            bi_dir.grid(row=input_frame.test_row, column=2, padx=5, pady=3)
+    #for input_frame, is_rotary in [(input_frame, True)]:
+    # Test Type Selection
+    lbl_test = tk.Label(input_frame, text="Test Type:", **main_label_style)
+    lbl_test.grid(row=input_frame.test_row, column=0, padx=5, pady=3, sticky='w')
+    
+    direction = tk.StringVar(value=0)
+    uni_dir = ttk.Radiobutton(
+        input_frame,
+        text="Unidirectional",
+        variable=direction,
+        value="uni",
+        command=test_type_def,
+        style='Modern.TRadiobutton'
+    )
+    uni_dir.grid(row=input_frame.test_row, column=1, padx=5, pady=3)
+    
+    bi_dir = ttk.Radiobutton(
+        input_frame,
+        text="Bidirectional",
+        variable=direction,
+        value="bi",
+        command=test_type_def,
+        style='Modern.TRadiobutton'
+    )
+    bi_dir.grid(row=input_frame.test_row, column=2, padx=5, pady=3)
 
-            # Axis Name and Starting Position
-            lbl_axis = tk.Label(input_frame, text="Axis Name:", **main_label_style)
-            lbl_axis.grid(row=input_frame.axis_row, column=0, padx=5, pady=5, sticky='w')
-            
-            var_axis = tk.StringVar(value=rot_axis_value)
-            ent_axis = ttk.Entry(input_frame, textvariable=var_axis, style='Modern.TEntry')
-            ent_axis.grid(row=input_frame.axis_row, column=1, padx=5, pady=5, sticky='ew')
+    # Axis Name and Starting Position
+    lbl_axis = tk.Label(input_frame, text="Axis Name:", **main_label_style)
+    lbl_axis.grid(row=input_frame.axis_row, column=0, padx=5, pady=5, sticky='w')
+    
+    var_axis = tk.StringVar(value=rot_axis_value)
+    ent_axis = ttk.Entry(input_frame, textvariable=var_axis, style='Modern.TEntry')
+    ent_axis.grid(row=input_frame.axis_row, column=1, padx=5, pady=5, sticky='ew')
 
-            lbl_st = tk.Label(input_frame, text="Starting Position (deg):", **main_label_style)
-            lbl_st.grid(row=input_frame.axis_row, column=2, padx=5, pady=5, sticky='w')
-            
-            var_start = tk.DoubleVar(value=rot_start_value)
-            ent_start_pos = ttk.Entry(input_frame, textvariable=var_start, style='Modern.TEntry')
-            ent_start_pos.grid(row=input_frame.axis_row, column=3, padx=5, pady=5, sticky='ew')
+    lbl_st = tk.Label(input_frame, text="Starting Position (deg):", **main_label_style)
+    lbl_st.grid(row=input_frame.axis_row, column=2, padx=5, pady=5, sticky='w')
+    
+    var_start = tk.DoubleVar(value=rot_start_value)
+    ent_start_pos = ttk.Entry(input_frame, textvariable=var_start, style='Modern.TEntry')
+    ent_start_pos.grid(row=input_frame.axis_row, column=3, padx=5, pady=5, sticky='ew')
 
-            # Total Travel and Step Size
-            lbl_travel = tk.Label(input_frame, text="Total Travel:", **main_label_style)
-            lbl_travel.grid(row=input_frame.travel_row, column=0, padx=5, pady=5, sticky='w')
-            
-            var_travel = tk.DoubleVar(value=rot_travel_value)
-            ent_travel = ttk.Entry(input_frame, textvariable=var_travel, style='Modern.TEntry')
-            ent_travel.grid(row=input_frame.travel_row, column=1, padx=5, pady=5, sticky='ew')
+    # Total Travel and Step Size
+    lbl_travel = tk.Label(input_frame, text="Total Travel:", **main_label_style)
+    lbl_travel.grid(row=input_frame.travel_row, column=0, padx=5, pady=5, sticky='w')
+    
+    var_travel = tk.DoubleVar(value=rot_travel_value)
+    ent_travel = ttk.Entry(input_frame, textvariable=var_travel, style='Modern.TEntry')
+    ent_travel.grid(row=input_frame.travel_row, column=1, padx=5, pady=5, sticky='ew')
 
-            lbl_step = tk.Label(input_frame, text="Step Size:", **main_label_style)
-            lbl_step.grid(row=input_frame.travel_row, column=2, padx=5, pady=5, sticky='w')
-            
-            var_step = tk.DoubleVar(value=rot_step_value)
-            ent_step = ttk.Entry(input_frame, textvariable=var_step, style='Modern.TEntry')
-            ent_step.grid(row=input_frame.travel_row, column=3, padx=5, pady=5, sticky='ew')
+    lbl_step = tk.Label(input_frame, text="Step Size:", **main_label_style)
+    lbl_step.grid(row=input_frame.travel_row, column=2, padx=5, pady=5, sticky='w')
+    
+    var_step = tk.DoubleVar(value=rot_step_value)
+    ent_step = ttk.Entry(input_frame, textvariable=var_step, style='Modern.TEntry')
+    ent_step.grid(row=input_frame.travel_row, column=3, padx=5, pady=5, sticky='ew')
 
-            # Units Selection
-            lbl_units = tk.Label(input_frame, text="Units:", **main_label_style)
-            lbl_units.grid(row=input_frame.units_row, column=0, padx=5, pady=2, sticky='w')
-            
-            unit_var = tk.StringVar(value='deg')
-            units_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
-            units_frame.grid(row=input_frame.units_row, column=1, sticky='w')
-            
-            for i, (text, value) in enumerate([("deg", 'deg'), ("mm", 'mm'), ("in", 'in')]):
-                ttk.Radiobutton(
-                    units_frame,
-                    text=text,
-                    variable=unit_var,
-                    value=value,
-                    command=unit_def,
-                    style='Modern.TRadiobutton'
-                ).grid(row=0, column=i, padx=2)
+    # Units Selection
+    lbl_units = tk.Label(input_frame, text="Units:", **main_label_style)
+    lbl_units.grid(row=input_frame.units_row, column=0, padx=5, pady=2, sticky='w')
+    
+    unit_var = tk.StringVar(value=0)
+    units_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
+    units_frame.grid(row=input_frame.units_row, column=1, sticky='w')
+    
+    for i, (text, value) in enumerate([("deg", 'deg'), ("mm", 'mm'), ("in", 'in')]):
+        ttk.Radiobutton(
+            units_frame,
+            text=text,
+            variable=unit_var,
+            value=value,
+            command=unit_def,
+            style='Modern.TRadiobutton'
+        ).grid(row=0, column=i, padx=2)
 
-            # Stent Diameter
-            lbl_stent = tk.Label(input_frame, text="Stent Diameter (mm):", **main_label_style)
-            lbl_stent.grid(row=input_frame.units_row, column=2, padx=5, pady=2, sticky='w')
-            
-            var_stent = tk.StringVar(value=rot_stent_value)
-            ent_stent = ttk.Entry(input_frame, textvariable=var_stent, state=tk.DISABLED, style='Modern.TEntry')
-            ent_stent.grid(row=input_frame.units_row, column=3, padx=5, pady=2, sticky='w')
+    # Stent Diameter
+    lbl_stent = tk.Label(input_frame, text="Stent Diameter (mm):", **main_label_style)
+    lbl_stent.grid(row=input_frame.units_row, column=2, padx=5, pady=2, sticky='w')
+    
+    var_stent = tk.StringVar(value=rot_stent_value)
+    ent_stent = ttk.Entry(input_frame, textvariable=var_stent, state=tk.DISABLED, style='Modern.TEntry')
+    ent_stent.grid(row=input_frame.units_row, column=3, padx=5, pady=2, sticky='w')
 
-            # Controller Selection
-            lbl_drive = tk.Label(input_frame, text="Controller:", **main_label_style)
-            lbl_drive.grid(row=input_frame.drive_row, column=0, padx=5, pady=2, sticky='w')
-            
-            drive_var = tk.StringVar(value='A1')
-            drive_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
-            drive_frame.grid(row=input_frame.drive_row, column=1, sticky='w')
-            
-            ttk.Radiobutton(
-                drive_frame,
-                text="A1",
-                variable=drive_var,
-                value='A1',
-                command=drive_def,
-                style='Modern.TRadiobutton'
-            ).grid(row=0, column=0, padx=2)
-            
-            ttk.Radiobutton(
-                drive_frame,
-                text="A3200",
-                variable=drive_var,
-                value='A3200',
-                command=drive_def,
-                style='Modern.TRadiobutton'
-            ).grid(row=0, column=1, padx=2)
+    # Controller Selection
+    lbl_drive = tk.Label(input_frame, text="Controller:", **main_label_style)
+    lbl_drive.grid(row=input_frame.drive_row, column=0, padx=5, pady=2, sticky='w')
+    
+    drive_var = tk.StringVar(value=0)
+    drive_frame = ttk.Frame(input_frame, style='RadioFrame.TFrame')
+    drive_frame.grid(row=input_frame.drive_row, column=1, sticky='w')
+    
+    ttk.Radiobutton(
+        drive_frame,
+        text="A1",
+        variable=drive_var,
+        value='A1',
+        command=drive_def,
+        style='Modern.TRadiobutton'
+    ).grid(row=0, column=0, padx=2)
+    
+    ttk.Radiobutton(
+        drive_frame,
+        text="Other",
+        variable=drive_var,
+        value='Other',
+        command=drive_def,
+        style='Modern.TRadiobutton'
+    ).grid(row=0, column=1, padx=2)
 
-            # Collimator Axis
-            lbl_col = tk.Label(input_frame, text="Collimator Axis:", **main_label_style)
-            lbl_col.grid(row=input_frame.drive_row, column=2, padx=5, pady=2, sticky='w')
-            
-            var_col = tk.StringVar(value=rot_col_value)
-            col_menu = ttk.OptionMenu(input_frame, var_col, rot_col_value, 'X', 'Y', style='Modern.TMenubutton')
-            col_menu.grid(row=input_frame.drive_row, column=3, padx=5, pady=2, sticky='w')
-            col_menu.configure(width=3)
+    # Collimator Axis
+    lbl_col = tk.Label(input_frame, text="Collimator Axis:", **main_label_style)
+    lbl_col.grid(row=input_frame.drive_row, column=2, padx=5, pady=2, sticky='w')
+    
+    var_col = tk.StringVar(value=rot_col_value)
+    col_menu = ttk.OptionMenu(input_frame, var_col, rot_col_value, 'X', 'Y', style='Modern.TMenubutton')
+    col_menu.grid(row=input_frame.drive_row, column=3, padx=5, pady=2, sticky='w')
+    col_menu.configure(width=3)
 
-            # Calibration Checkbox
-            var_cal = tk.IntVar(value=0)
-            cbx_cal = ttk.Checkbutton(
-                input_frame,
-                text="Calibrated",
-                variable=var_cal,
-                command=cal_def,
-                style='Modern.TCheckbutton'
-            )
-            cbx_cal.grid(row=input_frame.temp_row, column=2, padx=5, pady=2, sticky='w')
+    # Calibration Checkbox
+    var_cal = tk.IntVar(value=0)
+    cbx_cal = ttk.Checkbutton(
+        input_frame,
+        text="Calibrated",
+        variable=var_cal,
+        command=cal_def,
+        style='Modern.TCheckbutton'
+    )
+    cbx_cal.grid(row=input_frame.temp_row, column=2, padx=5, pady=2, sticky='w')
 
-            # Documentation fields
-            var_sys_serial = tk.StringVar(value=rot_sys_value)
-            var_st_serial = tk.StringVar(value=rot_st_value)
-            var_stage = tk.StringVar(value=rot_part_value)
-            var_op = tk.StringVar(value=rot_op_value)
-            var_temp = tk.DoubleVar(value=rot_temp_value)
-            var_comm = tk.StringVar(value=rot_comm_value)
+    # Documentation fields
+    var_sys_serial = tk.StringVar(value=rot_sys_value)
+    var_st_serial = tk.StringVar(value=rot_st_value)
+    var_stage = tk.StringVar(value=rot_part_value)
+    var_op = tk.StringVar(value=rot_op_value)
+    var_temp = tk.DoubleVar(value=rot_temp_value)
+    var_comm = tk.StringVar(value=rot_comm_value)
 
-            # Left Column
-            # System Serial Number
-            lbl_sys = tk.Label(input_frame, text="System Serial Number:", **main_label_style)
-            lbl_sys.grid(row=input_frame.sys_row, column=0, padx=5, pady=2, sticky='w')
-            ent_sys_serial = ttk.Entry(input_frame, textvariable=var_sys_serial, width=25, style='Modern.TEntry')
-            ent_sys_serial.grid(row=input_frame.sys_row, column=1, padx=5, pady=2, sticky='w')
+    # Left Column
+    # System Serial Number
+    lbl_sys = tk.Label(input_frame, text="System Serial Number:", **main_label_style)
+    lbl_sys.grid(row=input_frame.sys_row, column=0, padx=5, pady=2, sticky='w')
+    ent_sys_serial = ttk.Entry(input_frame, textvariable=var_sys_serial, width=25, style='Modern.TEntry')
+    ent_sys_serial.grid(row=input_frame.sys_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Stage Part Number
-            lbl_stage = tk.Label(input_frame, text="Stage Part Number:", **main_label_style)
-            lbl_stage.grid(row=input_frame.stage_row, column=0, padx=5, pady=2, sticky='w')
-            ent_stage = ttk.Entry(input_frame, textvariable=var_stage, width=25, style='Modern.TEntry')
-            ent_stage.grid(row=input_frame.stage_row, column=1, padx=5, pady=2, sticky='w')
+    # Stage Part Number
+    lbl_stage = tk.Label(input_frame, text="Stage Part Number:", **main_label_style)
+    lbl_stage.grid(row=input_frame.stage_row, column=0, padx=5, pady=2, sticky='w')
+    ent_stage = ttk.Entry(input_frame, textvariable=var_stage, width=25, style='Modern.TEntry')
+    ent_stage.grid(row=input_frame.stage_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Temperature
-            lbl_temp = tk.Label(input_frame, text="Temperature (°C):", **main_label_style)
-            lbl_temp.grid(row=input_frame.temp_row, column=0, padx=5, pady=2, sticky='w')
-            ent_temp = ttk.Entry(input_frame, textvariable=var_temp, width=8, style='Modern.TEntry')
-            ent_temp.grid(row=input_frame.temp_row, column=1, padx=5, pady=2, sticky='w')
+    # Temperature
+    lbl_temp = tk.Label(input_frame, text="Temperature (°C):", **main_label_style)
+    lbl_temp.grid(row=input_frame.temp_row, column=0, padx=5, pady=2, sticky='w')
+    ent_temp = ttk.Entry(input_frame, textvariable=var_temp, width=8, style='Modern.TEntry')
+    ent_temp.grid(row=input_frame.temp_row, column=1, padx=5, pady=2, sticky='w')
 
-            # Right Column
-            # Stage Serial Number
-            lbl_st = tk.Label(input_frame, text="Stage Serial Number:", **main_label_style)
-            lbl_st.grid(row=input_frame.sys_row, column=2, padx=5, pady=2, sticky='w')
-            ent_st_serial = ttk.Entry(input_frame, textvariable=var_st_serial, width=25, style='Modern.TEntry')
-            ent_st_serial.grid(row=input_frame.sys_row, column=3, padx=5, pady=2, sticky='w')
+    # Right Column
+    # Stage Serial Number
+    lbl_st = tk.Label(input_frame, text="Stage Serial Number:", **main_label_style)
+    lbl_st.grid(row=input_frame.sys_row, column=2, padx=5, pady=2, sticky='w')
+    ent_st_serial = ttk.Entry(input_frame, textvariable=var_st_serial, width=25, style='Modern.TEntry')
+    ent_st_serial.grid(row=input_frame.sys_row, column=3, padx=5, pady=2, sticky='w')
 
-            # Operator
-            lbl_op = tk.Label(input_frame, text="Operator:", **main_label_style)
-            lbl_op.grid(row=input_frame.stage_row, column=2, padx=5, pady=2, sticky='w')
-            ent_op = ttk.Entry(input_frame, textvariable=var_op, width=25, style='Modern.TEntry')
-            ent_op.grid(row=input_frame.stage_row, column=3, padx=5, pady=2, sticky='w')
+    # Operator
+    lbl_op = tk.Label(input_frame, text="Operator:", **main_label_style)
+    lbl_op.grid(row=input_frame.stage_row, column=2, padx=5, pady=2, sticky='w')
+    ent_op = ttk.Entry(input_frame, textvariable=var_op, width=25, style='Modern.TEntry')
+    ent_op.grid(row=input_frame.stage_row, column=3, padx=5, pady=2, sticky='w')
 
-            # Comments (spans both columns)
-            lbl_comments = tk.Label(input_frame, text="Comments:", **main_label_style)
-            lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=2, sticky='w')
-            ent_comments = ttk.Entry(input_frame, textvariable=var_comm, width=80, style='Modern.TEntry')
-            ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=2, sticky='w')
+    # Comments (spans both columns)
+    lbl_comments = tk.Label(input_frame, text="Comments:", **main_label_style)
+    lbl_comments.grid(row=input_frame.comm_row, column=0, padx=5, pady=2, sticky='w')
+    ent_comments = ttk.Entry(input_frame, textvariable=var_comm, width=80, style='Modern.TEntry')
+    ent_comments.grid(row=input_frame.comm_row, column=1, columnspan=3, padx=5, pady=2, sticky='w')
 
-            # Update other entry field widths
-            ent_axis.configure(width=25)
-            ent_start_pos.configure(width=25)
-            ent_travel.configure(width=25)
-            ent_step.configure(width=25)
-            ent_stent.configure(width=25)
+    # Update other entry field widths
+    ent_axis.configure(width=25)
+    ent_start_pos.configure(width=25)
+    ent_travel.configure(width=25)
+    ent_step.configure(width=25)
+    ent_stent.configure(width=25)
 
-            # Action buttons
-            button_frame = ttk.Frame(input_frame, style='Card.TFrame')
-            button_frame.grid(row=input_frame.run_row, column=0, columnspan=4, sticky='ew', padx=5, pady=(15, 25))
-            button_frame.columnconfigure(0, weight=1)
-            button_frame.columnconfigure(1, weight=1)
-            button_frame.columnconfigure(2, weight=1)
+    # Action buttons
+    button_frame = ttk.Frame(input_frame, style='Card.TFrame')
+    button_frame.grid(row=input_frame.run_row, column=0, columnspan=4, sticky='ew', padx=5, pady=(15, 25))
+    button_frame.columnconfigure(0, weight=1)
+    button_frame.columnconfigure(1, weight=1)
+    button_frame.columnconfigure(2, weight=1)
 
-            btn_run = ttk.Button(
-                button_frame,
-                text="Run Test",
-                command=lambda frame=input_frame: start_test(frame),
-                style='Primary.TButton'
-            )
-            btn_run.grid(row=0, column=0, padx=5, pady=(5, 10), sticky='ew')
-            
-            btn_import = ttk.Button(
-                button_frame,
-                text="Import Data",
-                command=lambda frame=input_frame: import_data(frame),
-                style='Secondary.TButton'
-            )
-            btn_import.grid(row=0, column=1, padx=5, pady=(5, 10), sticky='ew')
+    btn_run = ttk.Button(
+        button_frame,
+        text="Run Test",
+        command=lambda frame=input_frame: start_test(frame),
+        style='Primary.TButton'
+    )
+    btn_run.grid(row=0, column=0, padx=5, pady=(5, 10), sticky='ew')
+    
+    btn_import = ttk.Button(
+        button_frame,
+        text="Import Data",
+        command=lambda frame=input_frame: import_data(frame),
+        style='Secondary.TButton'
+    )
+    btn_import.grid(row=0, column=1, padx=5, pady=(5, 10), sticky='ew')
 
-            btn_open_plot = ttk.Button(
-                button_frame,
-                text="Open Plot",
-                command=open_rotary_Plot,
-                style='Secondary.TButton'
-            )
-            btn_open_plot.grid(row=0, column=2, padx=5, pady=(5, 10), sticky='ew')
+    btn_open_plot = ttk.Button(
+        button_frame,
+        text="Open Plot",
+        command=open_rotary_Plot,
+        style='Secondary.TButton'
+    )
+    btn_open_plot.grid(row=0, column=2, padx=5, pady=(5, 10), sticky='ew')
 
     window.mainloop()
 

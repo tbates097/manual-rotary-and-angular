@@ -40,7 +40,7 @@ class PlotManager:
         self.reverse_line = None
         self.reverse_points = []  # Store reverse direction points
         
-    def setup_plot(self, axis_name, col_axis_X=None, col_axis_Y=None):
+    def setup_plot(self, axis_name, col_axis_X=None, col_axis_Y=None, units='deg'):
         """Set up the plot(s) based on test type"""
         # Reset to default style
         plt.style.use('default')
@@ -55,7 +55,7 @@ class PlotManager:
         
         if self.plot_type == 'rotary':
             self.ax.set_title(f'{axis_name} Axis Calibration')
-            self.ax.set_xlabel('Position (deg)')
+            self.ax.set_xlabel(f'Position ({units})')
             self.ax.set_ylabel('Error (arcsec)')
             
             # Initialize lines for forward and reverse data
@@ -149,7 +149,7 @@ class PlotManager:
         ax.set_xlabel('Position', fontdict=self.fonts['label'], color=self.colors['text'])
         ax.set_ylabel('Measurement', fontdict=self.fonts['label'], color=self.colors['text'])
             
-    def update_plot(self, positions, forward_data, reverse_data=None, axis_num=None):
+    def update_plot(self, positions, forward_data, reverse_data=None, axis_num=None, units='deg'):
         """Update plot(s) with new data"""
         if not self.ax:
             return
@@ -170,7 +170,7 @@ class PlotManager:
                         rev_positions, rev_values = zip(*self.reverse_points)
                         self.reverse_line.set_data(rev_positions, rev_values)
             
-            self.ax.set_xlabel('Position (deg)')
+            self.ax.set_xlabel(f'Position ({units})')
             self.ax.set_ylabel('Error (arcsec)')
             self.ax.grid(True, linestyle='--', alpha=0.7, color=self.colors['grid'])
             

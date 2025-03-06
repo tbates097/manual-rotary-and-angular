@@ -5,7 +5,7 @@ Created on Fri Apr 26 09:12:26 2024
 @author: tbates
 """
 import tkinter as tk
-from tkinter import messagebox, font
+from tkinter import messagebox, font, ttk
 import automation1 as a1
 import math
 import os
@@ -15,6 +15,9 @@ from collections import deque
 sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared")
 #sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
+
+# Constants
+BACKGROUND = 'white'
 
 class data_and_cal:
     """
@@ -384,76 +387,149 @@ class data_and_cal:
             f.write(f'{fbk}{tab}{data}{tab}{self.temp}\n')
 
     def data_file_box(self):
-        df = tk.Toplevel(self.root)
+        # Create a new root window for the dialog
+        root = tk.Tk()
+        root.withdraw()  # Hide the root window
+        
+        df = tk.Toplevel(root)
         df.title('Generate Data File')
-        custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
+        df.configure(bg=BACKGROUND)
+        
+        # Configure the styles
+        style = ttk.Style()
+        style.configure('Dialog.TFrame', background=BACKGROUND)
+        style.configure('Dialog.TLabel', background=BACKGROUND)
+        style.configure('Dialog.TButton', padding=5)
+        style.configure('Dialog.TEntry', fieldbackground=BACKGROUND)
+        style.configure('Dialog.TMenubutton', background=BACKGROUND)
+        
+        # Ensure the window stays on top and grabs focus
+        df.wm_attributes("-topmost", 1)
+        df.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(df, style='Dialog.TFrame', padding=2)
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Create content frame with padding
+        content_frame = ttk.Frame(main_frame, style='Dialog.TFrame', padding="20 20 20 20")
+        content_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Configure modern font and label
+        message_font = font.Font(family="Segoe UI", size=11, weight="normal")
+        header_label = ttk.Label(
+            content_frame,
+            text="Input relevant data file information",
+            font=message_font,
+            wraplength=300,
+            justify='center',
+            style='Dialog.TLabel'
+        )
+        header_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
 
-        if self.drive != "Automation1":
-            self.create_data_file_form(df, custom_font)
-        df.focus_set()
-        df.result = None
-        df.wait_window()
-        return df.result
-
-    def create_data_file_form(self, df, custom_font):
-        home_dir_menu, entry_fields = self.create_form_entries(df, custom_font)
-        self.create_form_buttons(df, home_dir_menu, entry_fields)
-
-        df_width, df_height = self.calculate_form_dimensions(df)
-        df.geometry(f"{df_width}x{df_height}+100+200")
-        df.configure(bg='white')
-
-    def create_form_entries(self, df, custom_font):
-        home_dir = ["CW", "CCW"]
-        home_dir_menu = tk.StringVar(df)
-        home_dir_menu.set(home_dir[1])
-    
-        label_texts = ["Axis Number:", "Home Direction:", "Home Offset:", "Counts Per Unit:", "Rollover Counts:", "Speed:"]
-        default_values = ['1', '0', '0', '0', '0', '0']
-    
-        tk.Label(df, text="Input relevant data file information", bg='white', font=custom_font).grid(row=0, column=0, columnspan=2, padx=20, pady=10)
-    
+        # Create form entries
+        labels = ["Axis Number:", "Home Direction:", "Home Offset:", "Counts Per Unit:", "Rollover Counts:", "Speed:"]
+        default_values = ['1', 'CCW', '0', '0', '0', '0']
         entry_fields = {}
-        for i, (label_text, default_value) in enumerate(zip(label_texts, default_values)):
-            tk.Label(df, text=label_text, bg='white', font=custom_font).grid(row=2 * i + 1, column=0, columnspan=2, padx=10, pady=5)
-            if label_text == "Home Direction:":
-                tk.OptionMenu(df, home_dir_menu, *home_dir).grid(row=2 * i + 2, column=0, columnspan=2, padx=10, pady=5)
-            else:
-                entry = tk.Entry(df)
-                entry.insert(0, default_value)
-                entry.grid(row=2 * i + 2, column=0, columnspan=2, padx=10, pady=5)
-                entry_fields[label_text] = entry
-    
-        return home_dir_menu, entry_fields
+        home_dir_menu = tk.StringVar(df)
+        home_dir_menu.set(default_values[1])
 
-    def create_form_buttons(self, df, home_dir_menu, entry_fields):
-        def on_ok():
-            self.set_form_values(home_dir_menu, entry_fields)
+        for i, (label_text, default_value) in enumerate(zip(labels, default_values)):
+            label = ttk.Label(
+                content_frame,
+                text=label_text,
+                font=message_font,
+                style='Dialog.TLabel'
+            )
+            label.grid(row=i*2+1, column=0, columnspan=2, padx=10, pady=(5, 0), sticky='w')
+            
+            if label_text == "Home Direction:":
+                menu = ttk.OptionMenu(
+                    content_frame,
+                    home_dir_menu,
+                    default_value,
+                    "CW",
+                    "CCW",
+                    style='Dialog.TMenubutton'
+                )
+                menu.grid(row=i*2+2, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
+            else:
+                entry = ttk.Entry(content_frame, width=25, style='Dialog.TEntry')
+                entry.insert(0, default_value)
+                entry.grid(row=i*2+2, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
+                entry_fields[label_text] = entry
+
+        # Create button frame
+        button_frame = ttk.Frame(content_frame, style='Dialog.TFrame')
+        button_frame.grid(row=13, column=0, columnspan=2, pady=(10, 0))
+
+        def on_ok(event=None):
+            self.home_dir = home_dir_menu.get()
+            self.axis_num = entry_fields["Axis Number:"].get()
+            self.home_offset = entry_fields["Home Offset:"].get()
+            self.counts = entry_fields["Counts Per Unit:"].get()
+            self.rollovercounts = entry_fields["Rollover Counts:"].get()
+            self.speed = entry_fields["Speed:"].get()
             df.result = 'OK'
             df.destroy()
+            root.destroy()
 
-        def on_cancel():
+        def on_cancel(event=None):
             df.result = "Cancel"
             df.destroy()
+            root.destroy()
 
-        tk.Button(df, text="OK", width=10, height=2, command=on_ok).grid(row=13, column=0, padx=10, pady=10)
-        tk.Button(df, text="Cancel", width=10, height=2, command=on_cancel).grid(row=13, column=1, padx=10, pady=10)
+        # Configure modern buttons
+        button_ok = ttk.Button(
+            button_frame,
+            text="OK",
+            command=on_ok,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_ok.grid(row=0, column=0, padx=5)
 
-    def set_form_values(self, home_dir_menu, entry_fields):
-        self.home_dir = home_dir_menu.get()
-        self.axis_num = entry_fields["Axis Number:"].get()
-        self.home_offset = entry_fields["Home Offset:"].get()
-        self.counts = entry_fields["Counts Per Unit:"].get()
-        self.rollovercounts = entry_fields["Rollover Counts:"].get()
-        self.speed = entry_fields["Speed:"].get()
+        button_cancel = ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=on_cancel,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_cancel.grid(row=0, column=1, padx=5)
 
-    def calculate_form_dimensions(self, df):
-        width_padding = 40
-        height_padding = 125
+        # Configure grid weights
+        df.grid_rowconfigure(0, weight=1)
+        df.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(13, weight=1)
+        content_frame.grid_columnconfigure((0,1), weight=1)
 
-        width = max(widget.winfo_reqwidth() for widget in df.winfo_children())
-        height = sum(widget.winfo_reqheight() for widget in df.winfo_children())
-        return width + width_padding, height + height_padding
+        # Bind Enter key to OK button
+        df.bind("<Return>", on_ok)
+        df.resizable(False, False)
+
+        # Center the window
+        df.update_idletasks()
+        width = df.winfo_reqwidth()
+        height = df.winfo_reqheight()
+        screen_width = df.winfo_screenwidth()
+        screen_height = df.winfo_screenheight()
+        x_cordinate = int((screen_width/2) - (width/2))
+        y_cordinate = int((screen_height/2) - (height/2))
+        df.geometry(f"+{x_cordinate}+{y_cordinate}")
+
+        df.result = None
+        
+        # Schedule focus events
+        def set_focus():
+            df.focus_force()
+            button_ok.focus_set()
+        df.after(10, set_focus)
+        
+        df.wait_window()
+        return df.result
 
     def find_folder(self, base_path, search_str):
         try:
