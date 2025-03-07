@@ -468,6 +468,10 @@ def UI():
                    relief='solid',
                    borderwidth=1)
     
+    style.configure('Button.TFrame',
+                   background=BACKGROUND,
+                   )
+    
     style.configure('Header.TLabel',
                    font=('Segoe UI', 12, 'bold'),
                    foreground=TEXT_PRIMARY,
@@ -979,7 +983,7 @@ def UI():
     ent_stent.configure(width=25)
 
     # Action buttons
-    button_frame = ttk.Frame(input_frame, style='Card.TFrame')
+    button_frame = ttk.Frame(input_frame, style='Button.TFrame')
     button_frame.grid(row=input_frame.run_row, column=0, columnspan=4, sticky='ew', padx=5, pady=(15, 25))
     button_frame.columnconfigure(0, weight=1)
     button_frame.columnconfigure(1, weight=1)

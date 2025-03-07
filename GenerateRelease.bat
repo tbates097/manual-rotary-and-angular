@@ -5,7 +5,7 @@ set "deployment_location=K:\10. Released Software\Systems Manufacturing Support\
 set "local_git_repository=C:\Users\tbates\Python\manual-rotary-and-angular"
 set "repository_name=Manual Rotary and Angular"
 
-set "filelist=AerotechDataCal.py AerotechPDF.py AngularTest.py MetrologyTestInterface.py RotaryCalTest.py changelog.md README.md"
+set "filelist=AerotechDataCal.py AerotechPDF.py AngularTest.py MetrologyTestInterface.py RotaryCalTest.py changelog.md README.md plot_manager.py"
 
 echo This script will overwrite all files in %deployment_location%
 pause
