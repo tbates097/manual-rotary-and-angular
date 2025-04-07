@@ -355,6 +355,56 @@ def start_test(input_frame):
 def import_data(input_frame):
     """Import data from a file."""
     try:
+        global var_axis, var_step, var_travel, var_start, var_temp
+        global var_sys_serial, var_st_serial, var_comm, var_stage, var_op
+        global var_stent, var_cal, var_col, test_type, units, drive
+        global controller, test_thread, server_thread
+
+        # Validate test direction
+        if test_type not in ['Unidirectional', 'Bidirectional']:
+            raise ValueError("Please select a test direction (Unidirectional or Bidirectional)")
+        
+        # Get and validate values from Tkinter variables
+        try:
+            axis = str(var_axis.get()).strip()
+            if not axis:
+                raise ValueError("Axis Name is required")
+                
+            step_size = float(var_step.get())
+            if step_size <= 0:
+                raise ValueError("Step Size must be greater than 0")
+                
+            travel = float(var_travel.get())
+            if travel <= 0:
+                raise ValueError("Total Travel must be greater than 0")
+                
+            start_pos = float(var_start.get())
+            temp = float(var_temp.get())
+            sys_serial = str(var_sys_serial.get()).strip()
+            st_serial = str(var_st_serial.get()).strip()
+            comments = str(var_comm.get()).strip()
+            stage = str(var_stage.get()).strip()
+            op = str(var_op.get()).strip()
+            
+            # Validate required fields
+            if not all([sys_serial, st_serial, stage, op]):
+                raise ValueError("All documentation fields are required")
+            
+            # Get stent diameter if available
+            if unit_var.get() != 'deg':
+                dia = float(var_stent.get())
+                if dia <= 0:
+                    raise ValueError("Stent Diameter must be greater than 0")
+            else:
+                dia = 0
+                
+        except ValueError as e:
+            raise ValueError(f"Invalid input: {str(e)}")
+            
+        # Default values
+        num_readings = 10  # Default number of readings
+        dwell = 0.1  # Default dwell time
+
         # Get test parameters
         axis = str(var_axis.get())
         step_size = float(var_step.get())
@@ -370,16 +420,25 @@ def import_data(input_frame):
         # Create test instance
         test_instance = test_class(
             axis=axis,
+            num_readings=num_readings,
+            dwell=dwell,
             step_size=step_size,
             travel=travel,
             units=units,
+            dia=dia,
             test_type=test_type,
+            sys_serial=sys_serial,
             st_serial=st_serial,
             comments=comments,
+            temp=temp,
+            start_pos=start_pos,
+            drive=drive,
             stage_type=stage,
             oper=op,
-            text_widget=text_widget,
-            window=window
+            text_widget=txt_outStr,
+            window=window,
+            is_cal=var_cal.get(),
+            col_axis=var_col.get()
         )
         
         # Import the data
