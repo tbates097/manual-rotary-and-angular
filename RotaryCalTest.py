@@ -15,8 +15,8 @@ import math
 import numpy as np
 import datetime
 import threading
-import socket
 import gc
+from tkinter import ttk
 
 from AerotechDataCal import data_and_cal
 from AerotechPDF import aerotech_PDF
@@ -25,6 +25,9 @@ sys.path.append(r"K:\10. Released Software\Systems Manufacturing Support\Shared"
 #sys.path.append(r"C:\Users\tbates\Python\shared")
 from Logger import TextLogger
 from SerialHandler import serial_com
+
+# Constants
+BACKGROUND = 'white'
 
 class rotary_cal():
     def __init__(self, axis, num_readings, dwell, step_size, travel, units, dia, test_type, sys_serial, st_serial, comments, temp, start_pos, drive, stage_type, oper, text_widget, window, **kwargs):
@@ -49,12 +52,10 @@ class rotary_cal():
 
         self.is_cal = kwargs.get('is_cal', None)
         self.col_axis = kwargs.get('col_axis', None)
+        self.on_data_update = kwargs.get('on_data_update', None)  # Add callback for plot updates
         
         self.text_logger = TextLogger(text_widget)
         sys.stdout = self.text_logger
-        
-        self.window = tk.Tk()
-        self.window.withdraw()
         
         self.collecting = False
         
@@ -167,12 +168,12 @@ class rotary_cal():
         if self.is_cal:
             verify = self.prompt_user("\nCalibration is enabled. Do you want to proceed with verification (Y/N)?")
             if verify.lower() == 'y':
-                self.send_data('clear', 'clear')
                 self.clear_text()
                 self.step_size = float(self.prompt_user("Enter verification step size."))
                 self.test_type = 'Bidirectional'
                 self.clear_text()
             else:
+                self.prompt_user("Start verification when ready")
                 return
         
         if self.units == 'mm':
@@ -230,8 +231,6 @@ class rotary_cal():
         self.uni_a1_test_loop()
     
     def uni_a1_test_loop(self):
-        self.connect_to_server()
-        self.send_data('clear', 'clear')
         time.sleep(5)
         pos_fbk = self.update_position_feedback()
         if pos_fbk != self.start_pos:
@@ -308,7 +307,6 @@ class rotary_cal():
         
         global col_reading
         col_reading = serial_com(self.dwell, self.text_widget, num_readings=self.num_readings)
-        #align = self.prompt_user("Align Ultradex and zero Autocollimator. Press 'Enter' when ready. Hit 'Esc' key to cancel")
 # =============================================================================
 #         if align == ">":
 #             self.clear_text()
@@ -627,7 +625,15 @@ class rotary_cal():
             data_repeat = str(round(max(abs(max(self.data_rep)), abs(min(self.data_rep))), 4))
             self.display_results(f'Accuracy: {accuracy}\nRepeat: {data_repeat}')
         
-        self.send_data(f"{direction}_fbk: {self.pos_fbk}", f"{direction}_col: {coldata}")
+        # Update the plot with new data
+        if hasattr(self, 'on_data_update'):
+            if direction == 'forward':
+                self.on_data_update(self.raw_for_pos, self.raw_forward)
+            else:
+                # For reverse direction, only send the current position and value
+                current_pos = pos_list[-1]
+                current_val = data_list[-1]
+                self.on_data_update(self.raw_for_pos, self.raw_forward, [(current_pos, current_val)])
 
     def move_incremental(self, distance):
         self.controller.runtime.commands.motion.moveincremental([self.axis], [distance], [self.speed])
@@ -669,7 +675,6 @@ class rotary_cal():
     def display_results(self, message):
         self.text_widget.config(state=tk.NORMAL)
         self.text_widget.delete(1.0, tk.END)
-        self.text_widget.config(state=tk.DISABLED)
         self.text_logger.write(message)
 
     def open_data_box(self):
@@ -681,22 +686,38 @@ class rotary_cal():
     def open_message_box_template(self, title, message):
         box = tk.Toplevel(self.window)
         box.title(title)
-        box.configure(bg='white')
+        box.configure(bg=BACKGROUND)
         
-        # Ensure the window stays on top until it loses focus
-        box.wm_attributes("-topmost", True)
+        # Configure the styles
+        style = ttk.Style()
+        style.configure('Dialog.TFrame', background=BACKGROUND)
+        style.configure('Dialog.TLabel', background=BACKGROUND)
+        style.configure('Dialog.TButton', padding=5)
         
-        box.lift()
+        # Ensure the window stays on top and grabs focus
+        box.wm_attributes("-topmost", 1)
+        box.transient(self.window)
+        box.grab_set()
         
-        custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
-        label = tk.Label(box, text=message, bg='white', font=custom_font)
-        label.grid(row=0, column=0, columnspan=2, padx=20, pady=10)
+        # Create main frame with padding
+        main_frame = ttk.Frame(box, style='Dialog.TFrame', padding=2)
+        main_frame.grid(row=0, column=0, sticky='nsew')
         
-# =============================================================================
-#         # Make the dialog a transient window
-#         box.transient(self.window)
-#         box.grab_set()
-# =============================================================================
+        # Create content frame with padding
+        content_frame = ttk.Frame(main_frame, style='Dialog.TFrame', padding="20 20 20 20")
+        content_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Configure modern font and label
+        message_font = font.Font(family="Segoe UI", size=11, weight="normal")
+        label = ttk.Label(
+            content_frame,
+            text=message,
+            font=message_font,
+            wraplength=300,
+            justify='center',
+            style='Dialog.TLabel'
+        )
+        label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
         
         def on_ok(event=None):
             box.result = "OK"
@@ -706,190 +727,280 @@ class rotary_cal():
             box.result = "Cancel"
             box.destroy()
 
-        button_ok = tk.Button(box, text="OK", width=10, height=2, command=on_ok)
-        button_ok.grid(row=1, column=0, padx=10, pady=10)
+        # Create button frame
+        button_frame = ttk.Frame(content_frame, style='Dialog.TFrame')
+        button_frame.grid(row=1, column=0, columnspan=2, pady=(0, 10))
+        
+        # Configure modern buttons
+        button_ok = ttk.Button(
+            button_frame,
+            text="OK",
+            command=on_ok,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_ok.grid(row=0, column=0, padx=5)
 
-        button_cancel = tk.Button(box, text="Cancel", width=10, height=2, command=on_cancel)
-        button_cancel.grid(row=1, column=1, padx=10, pady=10)
+        button_cancel = ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=on_cancel,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_cancel.grid(row=0, column=1, padx=5)
 
-        # Bind Enter key to the OK button
+        # Configure grid weights
+        box.grid_rowconfigure(0, weight=1)
+        box.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(1, weight=1)
+        content_frame.grid_columnconfigure((0,1), weight=1)
+
+        # Bind Enter key to OK button
         box.bind("<Return>", on_ok)
-
         box.resizable(False, False)
 
+        # Center the window
+        box.update_idletasks()
+        width = box.winfo_reqwidth()
+        height = box.winfo_reqheight()
         screen_width = box.winfo_screenwidth()
         screen_height = box.winfo_screenheight()
+        x_cordinate = int((screen_width/2) - (width/2))
+        y_cordinate = int((screen_height/2) - (height/2))
+        box.geometry(f"+{x_cordinate}+{y_cordinate}")
 
-        padding = 40
-        width = label.winfo_reqwidth()
-        height = label.winfo_reqheight() + button_ok.winfo_reqheight()
-
-        box_width = width + padding
-        box_height = height + padding
-
-        x_cordinate = int((screen_width / 2) - (box_width / 2))
-        y_cordinate = int((screen_height / 2) - (box_height / 2))
-
-        box.geometry("{}x{}+{}+{}".format(box_width, box_height, x_cordinate, y_cordinate))
-
-        # Set focus to the OK button
-        box.after(10, button_ok.focus_set)
         box.result = None
+        
+        # Schedule focus events
+        def set_focus():
+            box.focus_force()
+            button_ok.focus_set()
+        box.after(10, set_focus)
+        
         box.wait_window()
-
         return box.result
-    
+
     def open_message_box(self):
         align = tk.Toplevel(self.window)
         align.title('Setup')
-        align.configure(bg='white')
+        align.configure(bg=BACKGROUND)
         
-        custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
-        if self.drive == 'Automation1':
-            label = tk.Label(align, text="Align Ultradex and manually zero Autocollimator", bg='white', font=custom_font)
-        else:
-            label = tk.Label(align, text="Home Axis. Align Ultradex and manually zero Autocollimator", bg='white', font=custom_font)
-        label.grid(row=0, column=0, columnspan=2, padx=20, pady=10)
+        # Configure the styles
+        style = ttk.Style()
+        style.configure('Dialog.TFrame', background=BACKGROUND)
+        style.configure('Dialog.TLabel', background=BACKGROUND)
+        style.configure('Dialog.TButton', padding=5)
+        
+        # Ensure the window stays on top and grabs focus
+        align.wm_attributes("-topmost", 1)
+        align.transient(self.window)
+        align.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(align, style='Dialog.TFrame', padding=2)
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Create content frame with padding
+        content_frame = ttk.Frame(main_frame, style='Dialog.TFrame', padding="20 20 20 20")
+        content_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Configure modern font and label
+        message_font = font.Font(family="Segoe UI", size=11, weight="normal")
+        message = "Align Ultradex and manually zero Autocollimator" if self.drive == 'Automation1' else "Home Axis. Align Ultradex and manually zero Autocollimator"
+        label = ttk.Label(
+            content_frame,
+            text=message,
+            font=message_font,
+            wraplength=300,
+            justify='center',
+            style='Dialog.TLabel'
+        )
+        label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
 
-        def on_ok():
+        def on_ok(event=None):
             align.result = "OK"
             align.destroy()
 
-        def on_cancel():
+        def on_cancel(event=None):
             align.result = "Cancel"
             align.destroy()
-            self.window.focus_set()
-            return "Cancel"
 
-        button_ok = tk.Button(align, text="OK", width=10, height=2, command=on_ok)
-        button_ok.grid(row=1, column=0, padx=10, pady=10)
+        # Create button frame
+        button_frame = ttk.Frame(content_frame, style='Dialog.TFrame')
+        button_frame.grid(row=1, column=0, columnspan=2, pady=(0, 10))
         
-        align.bind("<Return>", on_ok)  # Bind Enter key to the OK button
-        
-        button_cancel = tk.Button(align, text="Cancel", width=10, height=2, command=on_cancel)
-        button_cancel.grid(row=1, column=1, padx=10, pady=10)
-        
+        # Configure modern buttons
+        button_ok = ttk.Button(
+            button_frame,
+            text="OK",
+            command=on_ok,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_ok.grid(row=0, column=0, padx=5)
+
+        button_cancel = ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=on_cancel,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_cancel.grid(row=0, column=1, padx=5)
+
+        # Configure grid weights
+        align.grid_rowconfigure(0, weight=1)
+        align.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(1, weight=1)
+        content_frame.grid_columnconfigure((0,1), weight=1)
+
+        # Bind Enter key to OK button
+        align.bind("<Return>", on_ok)
+        align.resizable(False, False)
+
+        # Center the window
+        align.update_idletasks()
+        width = align.winfo_reqwidth()
+        height = align.winfo_reqheight()
         screen_width = align.winfo_screenwidth()
         screen_height = align.winfo_screenheight()
-        
-        padding = 40
-        width = label.winfo_reqwidth()
-        height = label.winfo_reqheight() + button_ok.winfo_reqheight()
-        
-        align_width = width + padding
-        align_height = height + padding
-        
-        x_cordinate = int((screen_width / 2) - (align_width / 2))
-        y_cordinate = int((screen_height / 2) - (align_height / 2))
+        x_cordinate = int((screen_width/2) - (width/2))
+        y_cordinate = int((screen_height/2) - (height/2))
+        align.geometry(f"+{x_cordinate}+{y_cordinate}")
 
-        align.geometry("{}x{}+{}+{}".format(align_width, align_height, x_cordinate, y_cordinate))
-        align.configure(bg='white')
-        
-        align.focus_set()
         align.result = None
-        align.wait_window()
         
-        return align.result    
-    
+        # Schedule focus events
+        def set_focus():
+            align.focus_force()
+            button_ok.focus_set()
+        align.after(10, set_focus)
+        
+        align.wait_window()
+        return align.result
+
     def open_cal_box(self):
         cal = tk.Toplevel(self.window)
         cal.title('Generate Cal File')
-        cal.configure(bg='white')
+        cal.configure(bg=BACKGROUND)
         
-        custom_font = font.Font(family="Times New Roman", size=12, weight="bold", slant="italic")
+        # Configure the styles
+        style = ttk.Style()
+        style.configure('Dialog.TFrame', background=BACKGROUND)
+        style.configure('Dialog.TLabel', background=BACKGROUND)
+        style.configure('Dialog.TButton', padding=5)
         
-        label = tk.Label(cal, text="Are you generating a cal file?", bg='white', font=custom_font)
-        label.grid(row=0, column=0, columnspan=2, padx=20, pady=10)
+        # Ensure the window stays on top and grabs focus
+        cal.wm_attributes("-topmost", 1)
+        cal.transient(self.window)
+        cal.grab_set()
         
-        def on_ok():
-            cal.result = 'OK'
+        # Create main frame with padding
+        main_frame = ttk.Frame(cal, style='Dialog.TFrame', padding=2)
+        main_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Create content frame with padding
+        content_frame = ttk.Frame(main_frame, style='Dialog.TFrame', padding="20 20 20 20")
+        content_frame.grid(row=0, column=0, sticky='nsew')
+        
+        # Configure modern font and label
+        message_font = font.Font(family="Segoe UI", size=11, weight="normal")
+        label = ttk.Label(
+            content_frame,
+            text="Are you generating a cal file?",
+            font=message_font,
+            wraplength=300,
+            justify='center',
+            style='Dialog.TLabel'
+        )
+        label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+
+        def on_ok(event=None):
+            cal.result = "OK"
             cal.destroy()
-        
-        def on_cancel():
+
+        def on_cancel(event=None):
             cal.result = "Cancel"
             cal.destroy()
-            cal.destroy()
-            self.window.focus_set()
-            return "Cancel"
-            
-        button_ok = tk.Button(cal, text="Yes", width=10, height=2, command=on_ok)
-        button_ok.grid(row=2, column=0, padx=10, pady=10)
+
+        # Create button frame
+        button_frame = ttk.Frame(content_frame, style='Dialog.TFrame')
+        button_frame.grid(row=1, column=0, columnspan=2, pady=(0, 10))
         
-        cal.bind("<Return>", on_ok)  # Bind Enter key to the OK button
-        
-        button_cancel = tk.Button(cal, text="No", width=10, height=2, command=on_cancel)
-        button_cancel.grid(row=2, column=1, padx=10, pady=10)
-        
+        # Configure modern buttons
+        button_ok = ttk.Button(
+            button_frame,
+            text="Yes",
+            command=on_ok,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_ok.grid(row=0, column=0, padx=5)
+
+        button_cancel = ttk.Button(
+            button_frame,
+            text="No",
+            command=on_cancel,
+            style='Dialog.TButton',
+            width=12
+        )
+        button_cancel.grid(row=0, column=1, padx=5)
+
+        # Configure grid weights
+        cal.grid_rowconfigure(0, weight=1)
+        cal.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+        content_frame.grid_rowconfigure(1, weight=1)
+        content_frame.grid_columnconfigure((0,1), weight=1)
+
+        # Bind Enter key to OK button
+        cal.bind("<Return>", on_ok)
         cal.resizable(False, False)
 
+        # Center the window
+        cal.update_idletasks()
+        width = cal.winfo_reqwidth()
+        height = cal.winfo_reqheight()
         screen_width = cal.winfo_screenwidth()
         screen_height = cal.winfo_screenheight()
+        x_cordinate = int((screen_width/2) - (width/2))
+        y_cordinate = int((screen_height/2) - (height/2))
+        cal.geometry(f"+{x_cordinate}+{y_cordinate}")
 
-        padding = 40
-        width = label.winfo_reqwidth()
-        height = label.winfo_reqheight() + button_ok.winfo_reqheight()
-
-        cal_width = width + padding
-        cal_height = height + padding
-
-        x_cordinate = int((screen_width / 2) - (cal_width / 2))
-        y_cordinate = int((screen_height / 2) - (cal_height / 2))
-
-        cal.geometry("{}x{}+{}+{}".format(cal_width, cal_height, x_cordinate, y_cordinate))
-            
-        cal.focus_set()
         cal.result = None
-        cal.wait_window()
         
+        # Schedule focus events
+        def set_focus():
+            cal.focus_force()
+            button_ok.focus_set()
+        cal.after(10, set_focus)
+        
+        cal.wait_window()
         return cal.result
-    
-    def connect_to_server(self, retry_count=5, delay=1):
-        """
-        Attempts to connect to the server with retries.
-        """
-        # Make sure retry_count is an integer
-        #print('Connecting to server - RotaryCalTest')
-        if not isinstance(retry_count, int):
-            raise TypeError("retry_count must be an integer")
-    
-        for attempt in range(retry_count):
-            try:
-                self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.client_socket.connect((socket.gethostname(), 1234))  # Ensure the address and port are correct
-                #print("Connecting to:", socket.gethostname(), "on port 1234 - RotaryCalTest")
-                #print("Connected to server successfully. - RotaryCalTest")
-                return self.client_socket
-            except socket.error as e:
-                print(f"Failed to connect to server: {e}. Retrying in {delay} seconds...")
-                time.sleep(delay)
-        print("Failed to connect to server after multiple attempts.")
-        return None
-    
-    def send_data(self, x, y):
-        if self.client_socket:
-            message = f"{x},{y}\n".encode('utf-8')
-            try:
-                self.client_socket.sendall(message)
-            except socket.error as e:
-                print(f"Failed to send data: {e}")
-                self.client_socket.close()  # Close socket on error
-                self.client_socket = None
-                
+        
     def cleanup_data(self):
-        self.raw_for_pos.clear()
-        self.raw_rev_pos.clear()
-        self.raw_forward.clear()
-        self.raw_reverse.clear()
-        self.for_pos_fbk = []
-        self.rev_pos_fbk = []
-        self.forward = []
-        self.reverse = []
-        self.for_rev.clear()
-        self.data_accuracy.clear()
-        self.data_rep.clear()
-        #print("Data lists cleared to free up memory.")
+        try:
+            self.raw_for_pos.clear()
+            self.raw_rev_pos.clear()
+            self.raw_forward.clear()
+            self.raw_reverse.clear()
+            self.for_pos_fbk = []
+            self.rev_pos_fbk = []
+            self.forward = []
+            self.reverse = []
+            self.for_rev.clear()
+            self.data_accuracy.clear()
+            self.data_rep.clear()
+            print("Data lists cleared to free up memory.")
+        except Exception as e:
+            print(f"Data lists cleared to free up memory.")
         
     def cleanup_resources(self):
-        # ... existing cleanup code ...
         gc.collect()  # Force garbage collection to free up memory
         #print("Garbage collection completed.")
