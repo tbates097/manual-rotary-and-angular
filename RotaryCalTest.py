@@ -985,18 +985,21 @@ class rotary_cal():
         return cal.result
         
     def cleanup_data(self):
-        self.raw_for_pos.clear()
-        self.raw_rev_pos.clear()
-        self.raw_forward.clear()
-        self.raw_reverse.clear()
-        self.for_pos_fbk = []
-        self.rev_pos_fbk = []
-        self.forward = []
-        self.reverse = []
-        self.for_rev.clear()
-        self.data_accuracy.clear()
-        self.data_rep.clear()
-        #print("Data lists cleared to free up memory.")
+        try:
+            self.raw_for_pos.clear()
+            self.raw_rev_pos.clear()
+            self.raw_forward.clear()
+            self.raw_reverse.clear()
+            self.for_pos_fbk = []
+            self.rev_pos_fbk = []
+            self.forward = []
+            self.reverse = []
+            self.for_rev.clear()
+            self.data_accuracy.clear()
+            self.data_rep.clear()
+            print("Data lists cleared to free up memory.")
+        except Exception as e:
+            print(f"Data lists cleared to free up memory.")
         
     def cleanup_resources(self):
         gc.collect()  # Force garbage collection to free up memory
