@@ -417,6 +417,52 @@ def import_data(input_frame):
         test_class = rotary_cal
         text_widget = txt_outStr
         
+        if drive == 'Automation1':
+            try:
+                controller = a1.Controller.connect()
+                controller.start()
+            except:
+                connection_type = controller_def()
+                if connection_type == 'yes':
+                    try:
+                        controller = a1.Controller.connect_usb()
+                        controller.start()
+                    except:
+                        messagebox.showerror('Connection Error', 'Check connections and try again')
+                        return
+                else:
+                    messagebox.showerror('Update Software', 'Update Hyperwire firmware and try again')
+                    return
+
+            # Get connected axes
+            connected_axes = {}
+            non_virtual_axes = []
+            number_of_axes = controller.runtime.parameters.axes.count
+
+            axis_range = range(0, 32) if number_of_axes > 12 else range(0, 11)
+            
+            for axis_index in axis_range:
+                status_item_configuration = a1.StatusItemConfiguration()
+                status_item_configuration.axis.add(a1.AxisStatusItem.AxisStatus, axis_index)
+                result = controller.runtime.status.get_status_items(status_item_configuration)
+                axis_status = int(result.axis.get(a1.AxisStatusItem.AxisStatus, axis_index).value)
+                
+                if (axis_status & 1 << 13) > 0:
+                    connected_axes[controller.runtime.parameters.axes[axis_index].identification.axisname.value] = axis_index
+
+            for key, value in connected_axes.items():
+                non_virtual_axes.append(key)
+                
+            if len(non_virtual_axes) == 0:
+                try:
+                    controller = a1.Controller.connect_usb()
+                except:
+                    messagebox.showerror('No Device', 'No Devices Present. Check Connections.')
+                    return
+
+            # Clean up temporary objects
+            del connected_axes, non_virtual_axes, status_item_configuration, result
+
         # Create test instance
         test_instance = test_class(
             axis=axis,
@@ -442,7 +488,7 @@ def import_data(input_frame):
         )
         
         # Import the data
-        test_instance.import_data()
+        test_instance.import_data(controller)
         
     except Exception as e:
         messagebox.showerror("Error", f"Failed to import data: {str(e)}")

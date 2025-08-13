@@ -245,7 +245,7 @@ class rotary_cal():
             if self.pos_fbk == self.home_pos:
                 self.record_data('forward')
                 self.move_incremental(self.step_size)
-                time.sleep((self.step_size / self.speed) + 3)
+                time.sleep(abs((self.step_size / self.speed) + 3))
             else:
                 if self.pos_fbk <= self.end_point:
                     response = self.open_data_box()
@@ -253,7 +253,7 @@ class rotary_cal():
                         self.record_data('forward')
                         if self.pos_fbk < self.end_point:
                             self.move_incremental(self.step_size)
-                            time.sleep((self.step_size / self.speed) + 3)
+                            time.sleep(abs((self.step_size / self.speed) + 3))
                     elif response == "Cancel":
                         messagebox.showerror('Abort', 'Test Stopped')
                         break
@@ -271,7 +271,7 @@ class rotary_cal():
     def bi_a1_test_loop(self):
         if self.pos_fbk == self.end_point:
             self.over_travel_move()
-            time.sleep((self.step_size / self.speed) + 3)
+            time.sleep(abs((self.step_size / self.speed) + 3))
         while True:
             self.update_position_feedback()
             if self.pos_fbk >= self.start_pos:
@@ -280,7 +280,7 @@ class rotary_cal():
                     self.record_data('reverse')
                     if self.pos_fbk > self.start_pos:
                         self.move_incremental(-self.step_size)
-                        time.sleep((self.step_size / self.speed) + 3)
+                        time.sleep(abs((self.step_size / self.speed) + 3))
                 elif response == "Cancel":
                     tk.messagebox.showerror('Abort', 'Test Stopped')
                     break
@@ -423,7 +423,7 @@ class rotary_cal():
         self.reverse = self.raw_reverse
         self.post_process()
         
-    def import_data(self):
+    def import_data(self, import_controller: a1.Controller):
         self.for_pos_fbk = []
         self.rev_pos_fbk = []
         self.forward = []
@@ -434,7 +434,7 @@ class rotary_cal():
             with open(self.file_path, 'r') as file:
                 lines = file.readlines()
                 self.parse_file_lines(lines)
-            self.post_process()
+            self.post_process(import_controller)
         else:
             messagebox.showerror("Abort", "No file selected.")
           
@@ -467,7 +467,7 @@ class rotary_cal():
             self.for_pos_fbk = [float(i) for i in self.for_pos_fbk]
             self.forward = [float(i) for i in self.forward]
 
-    def post_process(self):
+    def post_process(self, import_controller=None):
         self.current_date = datetime.date.today()
         self.current_time = datetime.datetime.now().time()
         self.reverse = self.reverse[::-1]
@@ -479,7 +479,7 @@ class rotary_cal():
         if self.test_type == 'Bidirectional':
             self.reverse = [i - data_mean for i in self.reverse]
         self.calculate_accuracy_and_repeatability()
-        self.generate_reports()
+        self.generate_reports(import_controller)
         
     def calculate_accuracy_and_repeatability(self):
         if self.test_type == "Bidirectional":
@@ -497,7 +497,7 @@ class rotary_cal():
             accuracy_pk = data_max + abs(data_min)
             self.pk_pk = round(accuracy_pk, 3 if self.units == 'deg' else 8)
 
-    def generate_reports(self):
+    def generate_reports(self, import_controller=None):
         common_args = {
             'test_type': self.test_type, 'sys_serial': self.sys_serial, 'st_serial': self.st_serial, 
             'current_date': self.current_date, 'current_time': self.current_time, 'axis': self.axis,
@@ -554,7 +554,7 @@ class rotary_cal():
             }
             gen_pdf.rotary_pdf()
             data_file = data_and_cal(**import_data_args)
-
+            data_file.a1_data_file(import_controller)
         if self.is_cal:
             messagebox.showinfo('Test Complete', 'Test Is Complete')
         else:
@@ -637,7 +637,7 @@ class rotary_cal():
 
     def move_incremental(self, distance):
         self.controller.runtime.commands.motion.moveincremental([self.axis], [distance], [self.speed])
-        time.sleep((distance / self.speed) + 3)
+        time.sleep(abs((distance / self.speed) + 3))
 
     def over_travel_move(self):
         self.controller.runtime.commands.motion.moveincremental([self.axis], [self.dir_step], [self.speed])

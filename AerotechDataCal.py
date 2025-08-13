@@ -254,15 +254,15 @@ class data_and_cal:
             arcsec_to_rad = math.pi / 180 / 3600
             self.forward_data = [((i * arcsec_to_rad * radius) / 25.4) for i in self.forward_data]
         try:
-            return [-float(x) for x in self.forward_data]
+            return [round(-float(x), 2) for x in self.forward_data]
         except:
-            self.forward_data = [float(x) for x in self.forward_data]
+            self.forward_data = [round(float(x), 2) for x in self.forward_data]
             return [-x for x in self.forward_data]
 
     def create_hex_file(self, cal_data):
         # Read the original contents
-        contents = self.controller.files.read_text(f'{self.sys_serial}-KPMeasurements.txt')
-        
+        contents = self.controller.files.read_text(f'/Hexapod/Config Files/{self.sys_serial}-KPMeasurements.txt')
+        #contents = self.controller.files.read_text(f'{self.sys_serial}-KPMeasurements.txt')
         # Create the new content block
         new_block = f'[{self.axis}CAL]\n//Step Size in deg, correction in arc-sec\nStepSize={self.step_size}\nCorrection = {" ".join(map(str, cal_data))}'
         
@@ -279,9 +279,11 @@ class data_and_cal:
         
         # Join lines back together and write to controller
         updated_contents = '\n'.join(lines)
-        self.controller.files.write_text(f'{self.sys_serial}-KPMeasurements.txt', updated_contents)
+        self.controller.files.write_text(f'/Hexapod/Config Files/{self.sys_serial}-KPMeasurements.txt', updated_contents)
+        #self.controller.files.write_text(f'{self.sys_serial}-KPMeasurements.txt', updated_contents)
         #self.controller.runtime.commands.execute('EnableWork',1)
         messagebox.showinfo('Verify Cal File', 'Cal file has been updated in the controller.')
+
         return True
     
     def create_automation1_file(self, cal_data, corunit):
